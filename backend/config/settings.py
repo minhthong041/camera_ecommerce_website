@@ -17,6 +17,14 @@ from decouple import config
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def csv_config(name, default=""):
+    return [
+        item.strip()
+        for item in config(name, default=default).split(",")
+        if item.strip()
+    ]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
@@ -26,10 +34,7 @@ SECRET_KEY = config("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config("DEBUG", default=False, cast=bool)
 
-ALLOWED_HOSTS = config(
-    "ALLOWED_HOSTS",
-    default="localhost,127.0.0.1",
-).split(",")
+ALLOWED_HOSTS = csv_config("ALLOWED_HOSTS", default="localhost,127.0.0.1")
 
 
 # Application definition
@@ -144,11 +149,14 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+CORS_ALLOWED_ORIGINS = csv_config(
+    "CORS_ALLOWED_ORIGINS",
+    default=(
+        "http://localhost:5173,"
+        "http://127.0.0.1:5173,"
+        "http://localhost:3000,"
+        "http://127.0.0.1:3000"
+    ),
+)
 
 AUTH_USER_MODEL = "accounts.User"

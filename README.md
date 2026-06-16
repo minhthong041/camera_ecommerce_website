@@ -71,6 +71,58 @@ http://127.0.0.1:8000/
 http://127.0.0.1:8000/admin/
 ```
 
+## Docker Setup
+
+Yêu cầu:
+
+- Docker Desktop
+- Docker Compose v2
+
+Tạo file `.env` ở thư mục root dựa trên `.env.example`:
+
+```powershell
+copy .env.example .env
+```
+
+Chạy toàn bộ stack:
+
+```powershell
+docker compose up --build
+```
+
+Các service:
+
+```text
+Frontend:   http://localhost:5173/
+Backend:    http://localhost:8000/
+Admin:      http://localhost:8000/admin/
+PostgreSQL: localhost:5433
+```
+
+Backend container sẽ tự chạy `migrate` trước khi start Django server. Sau khi container đã chạy, seed dữ liệu:
+
+```powershell
+docker compose exec backend python manage.py seed_initial_data --with-demo-catalog
+```
+
+Tạo superuser:
+
+```powershell
+docker compose exec backend python manage.py createsuperuser
+```
+
+Dừng stack:
+
+```powershell
+docker compose down
+```
+
+Dừng và xóa luôn volume database Docker:
+
+```powershell
+docker compose down -v
+```
+
 ## Frontend Setup
 
 ```powershell
@@ -147,6 +199,7 @@ Sau đó tạo Pull Request vào `dev`.
 ## Notes
 
 - Không commit `backend/.env`, `frontend/.env`, `.venv`, `node_modules`.
+- Không commit root `.env`; chỉ commit `.env.example`.
 - Commit migrations Django.
 - Database PostgreSQL không nằm trong Git; mỗi thành viên tự tạo DB local và chạy `migrate`.
 - Dữ liệu nền được tạo lại bằng management command `seed_initial_data`.
