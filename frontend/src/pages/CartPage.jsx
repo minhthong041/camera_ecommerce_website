@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 // Dữ liệu ban đầu (chuyển ra ngoài để làm giá trị khởi tạo)

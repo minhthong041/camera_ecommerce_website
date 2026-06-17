@@ -1,5 +1,3 @@
-import React from "react";
-
 const mockOrderData = {
   items: [
     { name: "Máy ảnh Sony Alpha a7 IV Body", quantity: 1, price: 59000000 },
