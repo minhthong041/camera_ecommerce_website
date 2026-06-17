@@ -3,6 +3,7 @@ Django==5.2.15
 django-cors-headers==4.9.0
 django-filter==25.2
 djangorestframework==3.17.1
+djangorestframework-simplejwt==5.5.1
 pillow==12.2.0
 psycopg==3.3.4
 psycopg-binary==3.3.4
