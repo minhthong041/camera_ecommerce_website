@@ -175,6 +175,29 @@ cd frontend
 npm run build
 ```
 
+## Continuous Integration
+
+GitHub Actions workflow nằm tại:
+
+```text
+.github/workflows/ci.yml
+```
+
+Workflow chạy khi push hoặc tạo Pull Request vào:
+
+```text
+main
+dev
+```
+
+Các job hiện có:
+
+- `Backend`: cài Python dependencies, chạy Django check, kiểm tra migrations, migrate với PostgreSQL service, chạy tests.
+- `Frontend`: cài Node dependencies bằng `npm ci`, chạy lint, chạy production build.
+- `Docker Compose Config`: kiểm tra cú pháp `docker-compose.yml`.
+
+Sau khi workflow chạy thành công lần đầu trên GitHub, có thể bật ruleset yêu cầu status checks trước khi merge vào `main` hoặc `dev`.
+
 ## Git Workflow
 
 Khuyến nghị làm nhóm theo nhánh:
