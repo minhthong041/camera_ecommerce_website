@@ -2,6 +2,27 @@ import apiClient from './client'
 
 const unwrap = (response) => response.data
 
+const compactParams = (params) =>
+  Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+  )
+
+const buildProductListParams = ({
+  categoryId,
+  brandId,
+  search,
+  page,
+  pageSize,
+} = {}) =>
+  // DRF filterset expects category/brand, while React screens use categoryId/brandId.
+  compactParams({
+    category: categoryId,
+    brand: brandId,
+    search,
+    page,
+    page_size: pageSize,
+  })
+
 export const catalogApi = {
   getBrands: () => apiClient.get('/catalog/brands/').then(unwrap),
 
@@ -11,8 +32,10 @@ export const catalogApi = {
 
   getCategory: (id) => apiClient.get(`/catalog/categories/${id}/`).then(unwrap),
 
-  getProducts: (params = {}) =>
-    apiClient.get('/catalog/products/', { params }).then(unwrap),
+  getProducts: (query = {}) =>
+    apiClient
+      .get('/catalog/products/', { params: buildProductListParams(query) })
+      .then(unwrap),
 
   getProduct: (id) => apiClient.get(`/catalog/products/${id}/`).then(unwrap),
 
