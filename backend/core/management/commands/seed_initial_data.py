@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand
 
 from accounts.models import Role
 from catalog.models import Brand, Category, Variation, VariationOption
-from orders.models import OrderStatus, ShippingMethod
+from orders.models import OrderStatus, ReturnRequestStatus, ShippingMethod
 from payments.models import PaymentMethod, PaymentStatus
 from promotions.models import DiscountType
 
@@ -22,6 +22,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.seed_roles()
         self.seed_order_statuses()
+        self.seed_return_request_statuses()
         self.seed_payment_statuses()
         self.seed_payment_methods()
         self.seed_discount_types()
@@ -68,6 +69,14 @@ class Command(BaseCommand):
             PaymentStatus.objects.get_or_create(name=name)
 
         self.stdout.write(self.style.SUCCESS("Seeded payment statuses."))
+
+    def seed_return_request_statuses(self):
+        statuses = ["Pending", "Approved", "Rejected"]
+
+        for name in statuses:
+            ReturnRequestStatus.objects.get_or_create(name=name)
+
+        self.stdout.write(self.style.SUCCESS("Seeded return request statuses."))
 
     def seed_payment_methods(self):
         methods = [
