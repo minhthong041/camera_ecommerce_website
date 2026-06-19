@@ -1,6 +1,57 @@
+import { useState, useContext } from "react";
 import { Link } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
 
 const RegisterPage = () => {
+  // Quản lý toàn bộ thông tin form trong một Object state
+  const [formData, setFormData] = useState({
+    username: "",
+    full_name: "",
+    email: "",
+    phone_number: "",
+    dob: "",
+    password: "",
+    confirmPassword: "",
+  });
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const { register } = useContext(AuthContext);
+
+  // Hàm cập nhật data khi người dùng gõ vào các ô input
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (formData.password !== formData.confirmPassword) {
+      setError("Mật khẩu xác nhận không khớp!");
+      return;
+    }
+
+    setIsLoading(true);
+
+    // ĐÃ SỬA: Map trường confirmPassword thành password_confirm theo chuẩn backend
+    const registerData = {
+      ...formData,
+      password_confirm: formData.confirmPassword,
+    };
+    // Xóa trường cũ dư thừa đi
+    delete registerData.confirmPassword;
+
+    const result = await register(registerData);
+    if (!result.success) {
+      setError(result.message);
+    }
+    setIsLoading(false);
+  };
+
   return (
     <div className="flex items-center justify-center py-16 bg-gray-50">
       <div className="w-full max-w-xl p-8 bg-white rounded-lg shadow-md">
@@ -11,7 +62,13 @@ const RegisterPage = () => {
           </p>
         </div>
 
-        <form className="space-y-4">
+        {error && (
+          <div className="p-3 mb-4 text-sm text-red-600 bg-red-100 rounded-md">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Tên đăng nhập */}
           <div>
             <label className="block text-sm font-medium text-slate-700">
@@ -19,6 +76,9 @@ const RegisterPage = () => {
             </label>
             <input
               type="text"
+              name="username"
+              value={formData.username}
+              onChange={handleChange}
               className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
@@ -30,12 +90,15 @@ const RegisterPage = () => {
             </label>
             <input
               type="text"
+              name="full_name"
+              required
+              value={formData.full_name}
+              onChange={handleChange}
               className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-orange-500 focus:border-orange-500"
-              placeholder="Nguyen Van A"
             />
           </div>
 
-          {/* Email và Số điện thoại (Chia 2 cột) */}
+          {/* Email và Số điện thoại */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-slate-700">
@@ -43,6 +106,10 @@ const RegisterPage = () => {
               </label>
               <input
                 type="email"
+                name="email"
+                required
+                value={formData.email}
+                onChange={handleChange}
                 className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-orange-500 focus:border-orange-500"
                 placeholder="email@example.com"
               />
@@ -53,6 +120,9 @@ const RegisterPage = () => {
               </label>
               <input
                 type="tel"
+                name="phone_number"
+                value={formData.phone_number}
+                onChange={handleChange}
                 className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-orange-500 focus:border-orange-500"
                 placeholder="84+"
               />
@@ -66,11 +136,14 @@ const RegisterPage = () => {
             </label>
             <input
               type="date"
+              name="dob"
+              value={formData.dob}
+              onChange={handleChange}
               className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
 
-          {/* Mật khẩu và Xác nhận mật khẩu (Chia 2 cột) */}
+          {/* Mật khẩu và Xác nhận mật khẩu */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-slate-700">
@@ -78,6 +151,10 @@ const RegisterPage = () => {
               </label>
               <input
                 type="password"
+                name="password"
+                required
+                value={formData.password}
+                onChange={handleChange}
                 className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-orange-500 focus:border-orange-500"
               />
             </div>
@@ -87,6 +164,10 @@ const RegisterPage = () => {
               </label>
               <input
                 type="password"
+                name="confirmPassword"
+                required
+                value={formData.confirmPassword}
+                onChange={handleChange}
                 className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-orange-500 focus:border-orange-500"
               />
             </div>
@@ -94,18 +175,16 @@ const RegisterPage = () => {
 
           <button
             type="submit"
-            className="w-full px-4 py-2 mt-6 font-semibold text-white transition duration-200 rounded-md bg-slate-800 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-800 focus:ring-offset-2"
+            disabled={isLoading}
+            className="w-full px-4 py-2 mt-6 font-semibold text-white transition duration-200 rounded-md bg-slate-800 hover:bg-slate-900 disabled:bg-gray-400"
           >
-            Đăng ký tài khoản
+            {isLoading ? "Đang xử lý..." : "Đăng ký tài khoản"}
           </button>
         </form>
 
         <p className="mt-6 text-sm text-center text-gray-600">
           Đã có tài khoản?{" "}
-          <Link
-            to="/login"
-            className="font-medium text-orange-600 hover:text-orange-500"
-          >
+          <Link to="/login" className="font-medium text-orange-600">
             Đăng nhập
           </Link>
         </p>
