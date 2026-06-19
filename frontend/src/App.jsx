@@ -11,7 +11,7 @@ import ProductDetailPage from './pages/ProductDetailPage';
 import ProductListPage from './pages/ProductListPage';
 import RegisterPage from './pages/RegisterPage';
 
-// Import các trang quản lý tài khoản mới của bồ
+// Import các trang quản lý tài khoản 
 import ProfilePage from "./pages/ProfilePage";
 import EditProfilePage from "./pages/EditProfilePage";
 
