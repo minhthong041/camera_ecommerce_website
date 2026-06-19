@@ -3,8 +3,9 @@ from decimal import Decimal
 from uuid import uuid4
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import generics, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -15,15 +16,26 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from cart.models import CartItem, ShoppingCart
 from catalog.models import ProductItem
 from locations.models import Address
+from payments.models import Payment, PaymentStatus
 from promotions.models import Promotion
 from admin_dashboard.permissions import IsAdminRole, IsStaffRole
 
-from .models import Order, OrderLine, OrderStatus, ShippingMethod
+from .models import (
+    Order,
+    OrderLine,
+    OrderStatus,
+    ReturnRequest,
+    ReturnRequestStatus,
+    ShippingMethod,
+)
 from .serializers import (
     CheckoutSerializer,
     OrderDetailSerializer,
     OrderSerializer,
     OrderStatusUpdateSerializer,
+    ReturnRequestCreateSerializer,
+    ReturnRequestSerializer,
+    ReturnRequestStatusUpdateSerializer,
 )
 
 
@@ -38,6 +50,21 @@ def get_configured_order_status(status_name):
             {"status": f"Order status '{status_name}' is not configured."}
         )
     return order_status
+
+
+def get_configured_return_request_status(status_name):
+    return_status = ReturnRequestStatus.objects.filter(
+        name__iexact=status_name
+    ).first()
+    if return_status is None:
+        raise ValidationError(
+            {
+                "status": (
+                    f"Return request status '{status_name}' is not configured."
+                )
+            }
+        )
+    return return_status
 
 
 def restore_order_stock(order):
@@ -79,6 +106,131 @@ def optimized_order_queryset():
         .prefetch_related("lines__product_item__product")
         .order_by("-created_at", "-id")
     )
+
+
+def optimized_return_request_queryset():
+    return ReturnRequest.objects.select_related(
+        "user",
+        "status",
+        "order",
+        "order__status",
+    ).order_by("-created_at", "-id")
+
+
+class ReturnRequestListCreateAPIView(generics.ListCreateAPIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        return optimized_return_request_queryset().filter(user=self.request.user)
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return ReturnRequestCreateSerializer
+        return ReturnRequestSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return_request = serializer.save()
+        output_serializer = ReturnRequestSerializer(
+            return_request,
+            context=self.get_serializer_context(),
+        )
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class AdminReturnRequestListAPIView(generics.ListAPIView):
+    serializer_class = ReturnRequestSerializer
+    permission_classes = (IsAuthenticated, IsAdminRole | IsStaffRole)
+    queryset = optimized_return_request_queryset()
+
+
+class AdminReturnRequestStatusAPIView(generics.GenericAPIView):
+    serializer_class = ReturnRequestStatusUpdateSerializer
+    permission_classes = (IsAuthenticated, IsAdminRole | IsStaffRole)
+
+    def patch(self, request, pk, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        requested_status = serializer.validated_data["status"]
+
+        with transaction.atomic():
+            return_request = (
+                ReturnRequest.objects.select_for_update()
+                .select_related("status", "order", "order__status", "user")
+                .filter(pk=pk)
+                .first()
+            )
+            if return_request is None:
+                raise NotFound("Return request does not exist.")
+
+            if return_request.status.name.strip().lower() != "pending":
+                raise ValidationError(
+                    {"status": "Only pending return requests can be processed."}
+                )
+
+            new_return_status = get_configured_return_request_status(
+                requested_status
+            )
+            if requested_status == "approved":
+                self.approve_return(return_request, new_return_status)
+            else:
+                return_request.status = new_return_status
+                return_request.save(update_fields=("status",))
+
+        return_request = optimized_return_request_queryset().get(pk=return_request.pk)
+        return Response(
+            ReturnRequestSerializer(return_request).data,
+            status=status.HTTP_200_OK,
+        )
+
+    @staticmethod
+    def approve_return(return_request, approved_return_status):
+        refunded_order_status = get_configured_order_status("refunded")
+        refunded_payment_status = PaymentStatus.objects.filter(
+            name__iexact="refunded"
+        ).first()
+        if refunded_payment_status is None:
+            raise ValidationError(
+                {"payment_status": "Refunded payment status is not configured."}
+            )
+
+        payment = (
+            Payment.objects.select_for_update()
+            .select_related("status")
+            .filter(order_id=return_request.order_id)
+            .filter(
+                Q(status__name__iexact="paid")
+                | Q(status__name__iexact="completed")
+            )
+            .order_by("-created_at", "-id")
+            .first()
+        )
+        if payment is None:
+            raise ValidationError(
+                {"payment": "This order has no refundable payment."}
+            )
+
+        order = (
+            Order.objects.select_for_update()
+            .select_related("status")
+            .get(pk=return_request.order_id)
+        )
+        if order.status.name.strip().lower() != "delivered":
+            raise ValidationError(
+                {"order": "Only delivered orders can be approved for return."}
+            )
+
+        restore_order_stock(order)
+
+        payment.status = refunded_payment_status
+        payment.save(update_fields=("status", "updated_at"))
+
+        order.status = refunded_order_status
+        order.save(update_fields=("status",))
+
+        return_request.status = approved_return_status
+        return_request.save(update_fields=("status",))
 
 
 class CheckoutAPIView(APIView):
