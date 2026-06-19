@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { catalogApi } from '../api/catalogApi';
 import ProductCard from '../components/ProductCard';
-import { Search, SlidersHorizontal, RotateCcw } from 'lucide-react';
+import { Search, SlidersHorizontal, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function ProductListPage() {
   const [products, setProducts] = useState([]);
@@ -11,12 +11,19 @@ export default function ProductListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Trạng thái phục vụ bộ lọc và phân trang
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const pageSize = 12; // Số sản phẩm hiển thị trên mỗi trang
 
-  // 1. Chỉ gọi duy nhất API categories và brands một lần khi mount component
+  // Lấy dữ liệu bộ lọc tĩnh khi component khởi chạy lần đầu
   useEffect(() => {
     let isMounted = true;
     Promise.all([catalogApi.getCategories(), catalogApi.getBrands()])
@@ -32,26 +39,39 @@ export default function ProductListPage() {
     return () => { isMounted = false; };
   }, []);
 
-  // 2. Tách biệt logic lấy sản phẩm sạch, không nhét lệnh setLoading(true) đồng bộ vào đây
+  // Đóng gói hàm gọi API bất đồng bộ theo chuẩn
   const fetchProducts = useCallback(() => {
     const queryParams = {
       categoryId: selectedCategory || undefined,
       brandId: selectedBrand || undefined,
       search: search || undefined,
+      page: currentPage,
+      pageSize: pageSize,
     };
 
     catalogApi.getProducts(queryParams)
       .then((data) => {
-        setProducts(data?.results || data || []);
+        // Tách cấu trúc Object phân trang thực tế từ DRF backend
+        if (data && typeof data === 'object' && 'results' in data) {
+          setProducts(data.results || []);
+          setTotalCount(data.count || 0);
+          setHasNext(!!data.next);
+          setHasPrevious(!!data.previous);
+        } else {
+          // Fallback nếu API trả về mảng thô trực tiếp
+          setProducts(Array.isArray(data) ? data : []);
+          setTotalCount(Array.isArray(data) ? data.length : 0);
+          setHasNext(false);
+          setHasPrevious(false);
+        }
         setLoading(false);
       })
       .catch((err) => {
         setError(err.message || 'Không thể lấy dữ liệu sản phẩm từ API Backend.');
         setLoading(false);
       });
-  }, [selectedCategory, selectedBrand, search]);
+  }, [selectedCategory, selectedBrand, search, currentPage]);
 
-  // 3. Thực thi effect lấy sản phẩm. Dùng hàm bao bọc trì hoãn ngắt chuỗi đồng bộ của ESLint
   useEffect(() => {
     let isMounted = true;
     if (isMounted) {
@@ -60,21 +80,23 @@ export default function ProductListPage() {
     return () => { isMounted = false; };
   }, [fetchProducts]);
 
-  // 4. Bật hiệu ứng loading ngay khi người dùng chủ động click chọn bộ lọc
   const handleCategoryChange = (id) => {
     setLoading(true);
     setSelectedCategory(id);
+    setCurrentPage(1); // Reset về trang 1 khi lọc lại
   };
 
   const handleBrandChange = (id) => {
     setLoading(true);
     setSelectedBrand(id);
+    setCurrentPage(1);
   };
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     setLoading(true);
     setSearch(searchInput);
+    setCurrentPage(1);
   };
 
   const handleResetFilters = () => {
@@ -83,6 +105,7 @@ export default function ProductListPage() {
     setSelectedBrand('');
     setSearch('');
     setSearchInput('');
+    setCurrentPage(1);
   };
 
   return (
@@ -107,6 +130,7 @@ export default function ProductListPage() {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
+        {/* SIDEBAR FILTER */}
         <aside className="w-full lg:w-64 shrink-0 space-y-6">
           <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between pb-4 mb-4 border-b border-gray-100">
@@ -189,24 +213,50 @@ export default function ProductListPage() {
           </div>
         </aside>
 
-        <div className="flex-grow">
-          {loading ? (
-            <div className="text-center py-20 text-sm text-gray-500">
-              Đang tải danh sách thiết bị từ máy chủ...
-            </div>
-          ) : error ? (
-            <div className="text-center py-20 text-red-500 text-sm font-bold">
-              Lỗi kết nối: {error}
-            </div>
-          ) : products.length === 0 ? (
-            <div className="bg-white text-center py-20 rounded-xl border border-gray-100 text-gray-400 text-sm shadow-sm">
-              Không tìm thấy sản phẩm nào khớp với bộ lọc hiện tại.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {products.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
+        {/* DANH SÁCH SẢN PHẨM & PHÂN TRANG */}
+        <div className="flex-grow flex flex-col justify-between">
+          <div>
+            {loading ? (
+              <div className="text-center py-20 text-sm text-gray-500">
+                Đang tải danh sách thiết bị từ máy chủ...
+              </div>
+            ) : error ? (
+              <div className="text-center py-20 text-red-500 text-sm font-bold">
+                Lỗi kết nối: {error}
+              </div>
+            ) : products.length === 0 ? (
+              <div className="bg-white text-center py-20 rounded-xl border border-gray-100 text-gray-400 text-sm shadow-sm">
+                Không tìm thấy sản phẩm nào khớp với bộ lọc hiện tại.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {products.map((product) => (
+                  <ProductCard key={product.id} product={product} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION CONTROLS) */}
+          {!loading && !error && totalCount > pageSize && (
+            <div className="mt-12 flex items-center justify-center gap-4 border-t border-gray-100 pt-6">
+              <button
+                disabled={!hasPrevious}
+                onClick={() => { setLoading(true); setCurrentPage(prev => prev - 1); }}
+                className="flex items-center gap-1 px-4 py-2 text-xs font-bold bg-white border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white transition-all"
+              >
+                <ChevronLeft className="w-4 h-4" /> Trang trước
+              </button>
+              <span className="text-xs font-bold text-gray-500">
+                Trang {currentPage} / {Math.ceil(totalCount / pageSize)}
+              </span>
+              <button
+                disabled={!hasNext}
+                onClick={() => { setLoading(true); setCurrentPage(prev => prev + 1); }}
+                className="flex items-center gap-1 px-4 py-2 text-xs font-bold bg-white border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white transition-all"
+              >
+                Trang sau <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           )}
         </div>

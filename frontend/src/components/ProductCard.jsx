@@ -1,12 +1,27 @@
 import { Eye, ShoppingCart } from 'lucide-react';
-import { Link } from 'react-router-dom'; // 1. Import thêm Link từ react-router-dom
+import { useNavigate } from 'react-router-dom';
 
 export default function ProductCard({ product }) {
-  const formatVND = (price) => price.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
+  const navigate = useNavigate();
+
+  // Trích xuất an toàn các trường nằm sâu trong object theo thiết kế thực tế của Backend
+  const firstItem = product?.items?.[0] || {};
+  const price = firstItem?.price;
+  const oldPrice = firstItem?.old_price || product?.oldPrice; // Dự phòng fallback
+  const image = firstItem?.product_image || product?.image;
+  const stockQuantity = firstItem?.qty_in_stock || 0;
+  
+  // Xử lý hiển thị tên thương hiệu (Backend trả về object brand: { name, ... })
+  const brandName = product?.brand?.name || product?.brand || 'Chính hãng';
+
+  const formatVND = (value) => {
+    if (value === undefined || value === null) return 'Liên hệ';
+    return value.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
+  };
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-4 relative group hover:shadow-xl hover:border-transparent transition-all duration-300 flex flex-col justify-between">
-      {product.discount > 0 && (
+      {product?.discount > 0 && (
         <span className="absolute top-3 left-3 bg-red-500 text-white text-[11px] font-bold px-2 py-0.5 rounded-md z-10">
           -{product.discount}%
         </span>
@@ -14,16 +29,18 @@ export default function ProductCard({ product }) {
 
       <div className="relative aspect-square overflow-hidden rounded-lg bg-gray-50 mb-4 flex items-center justify-center p-2">
         <img
-          src={product.image}
-          alt={product.name}
+          src={image}
+          alt={product?.name}
           className="object-contain w-full h-full group-hover:scale-105 transition-transform duration-500"
           loading="lazy"
         />
         <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2">
-          {/* 2. Bọc icon Eye bằng thẻ Link để nhấn vào ảnh cũng chuyển trang */}
-          <Link to={`/products/${product.id}`} className="bg-white p-2.5 rounded-full text-gray-900 shadow-md hover:bg-amber-500 hover:text-white transition-all transform translate-y-2 group-hover:translate-y-0 duration-300">
+          <button 
+            onClick={() => navigate(`/products/${product.id}`)}
+            className="bg-white p-2.5 rounded-full text-gray-900 shadow-md hover:bg-amber-500 hover:text-white transition-all transform translate-y-2 group-hover:translate-y-0 duration-300"
+          >
             <Eye className="w-4 h-4" />
-          </Link>
+          </button>
           <button className="bg-white p-2.5 rounded-full text-gray-900 shadow-md hover:bg-gray-900 hover:text-white transition-all transform translate-y-2 group-hover:translate-y-0 duration-300 delay-75">
             <ShoppingCart className="w-4 h-4" />
           </button>
@@ -32,36 +49,33 @@ export default function ProductCard({ product }) {
 
       <div className="flex-grow flex flex-col justify-between">
         <div>
-          <span className="text-[10px] text-gray-400 uppercase font-bold tracking-widest block">{product.brand}</span>
-          {/* 3. Cho phép nhấn vào tiêu đề để xem chi tiết */}
-          <Link to={`/products/${product.id}`}>
-            <h3 className="font-bold text-sm text-gray-800 line-clamp-2 mt-1 min-h-[40px] group-hover:text-amber-500 transition-colors">
-              {product.name}
-            </h3>
-          </Link>
+          <span className="text-[10px] text-gray-400 uppercase font-bold tracking-widest block">
+            {brandName}
+          </span>
+          <h3 className="font-bold text-sm text-gray-800 line-clamp-2 mt-1 min-h-[40px] group-hover:text-amber-500 transition-colors">
+            {product?.name}
+          </h3>
           <div className="flex items-center gap-2 mt-2 text-xs">
-            <span className="text-gray-400">Tình trạng:</span>
-            <span className={`font-semibold ${product.status === 'Còn hàng' ? 'text-green-600' : 'text-amber-600'}`}>
-              {product.status}
+            <span className="text-gray-400">Kho hàng:</span>
+            <span className={`font-semibold ${stockQuantity > 0 ? 'text-green-600' : 'text-amber-600'}`}>
+              {stockQuantity > 0 ? `Còn hàng (${stockQuantity})` : 'Hết hàng'}
             </span>
           </div>
         </div>
 
         <div className="mt-4 pt-3 border-t border-gray-50">
           <div className="flex items-baseline flex-wrap gap-x-2">
-            <span className="text-red-500 font-black text-base">{formatVND(product.price)}</span>
-            {product.oldPrice && (
-              <span className="text-xs text-gray-400 line-through">{formatVND(product.oldPrice)}</span>
+            <span className="text-red-500 font-black text-base">{formatVND(price)}</span>
+            {oldPrice && (
+              <span className="text-xs text-gray-400 line-through">{formatVND(oldPrice)}</span>
             )}
           </div>
-          
-          {/* 4. Thay đổi từ <button> thành <Link> để kích hoạt chuyển hướng */}
-          <Link 
-            to={`/products/${product.id}`}
-            className="w-full mt-3 block text-center bg-gray-50 border border-gray-100 text-gray-800 py-2 rounded-lg text-xs font-bold hover:bg-gray-900 hover:text-white hover:border-gray-900 transition-all"
+          <button 
+            onClick={() => navigate(`/products/${product.id}`)}
+            className="w-full mt-3 bg-gray-50 border border-gray-100 text-gray-800 py-2 rounded-lg text-xs font-bold hover:bg-gray-900 hover:text-white hover:border-gray-900 transition-all"
           >
             Xem chi tiết
-          </Link>
+          </button>
         </div>
       </div>
     </div>
