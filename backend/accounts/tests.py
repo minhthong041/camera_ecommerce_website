@@ -110,6 +110,24 @@ class AccountSecurityAPITests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    def test_profile_update_does_not_allow_username_changes(self):
+        self.authenticate_user()
+
+        response = self.client.patch(
+            "/api/auth/profile/",
+            {
+                "username": "changed-username",
+                "full_name": "Updated Security User",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, "security-user")
+        self.assertEqual(self.user.full_name, "Updated Security User")
+        self.assertEqual(response.data["username"], "security-user")
+
     def test_password_reset_request_sends_token_by_email(self):
         response = self.client.post(
             "/api/auth/password-reset/",
