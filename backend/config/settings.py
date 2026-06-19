@@ -178,3 +178,20 @@ SIMPLE_JWT = {
     "UPDATE_LAST_LOGIN": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
+
+
+# Payment gateways
+VNPAY_TMN_CODE = config("VNPAY_TMN_CODE", default="")
+VNPAY_HASH_SECRET = config("VNPAY_HASH_SECRET", default="")
+VNPAY_PAYMENT_URL = config(
+    "VNPAY_PAYMENT_URL",
+    default="https://sandbox.vnpayment.vn/paymentv2/vpcpay.html",
+)
+VNPAY_RETURN_URL = config(
+    "VNPAY_RETURN_URL",
+    default="http://localhost:5173/payment-result",
+)
+
+STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="")
+STRIPE_WEBHOOK_SECRET = config("STRIPE_WEBHOOK_SECRET", default="")
+STRIPE_CURRENCY = config("STRIPE_CURRENCY", default="vnd")

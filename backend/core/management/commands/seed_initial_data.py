@@ -87,6 +87,10 @@ class Command(BaseCommand):
                 "name": "vnpay",
                 "description": "VNPAY payment gateway",
             },
+            {
+                "name": "stripe",
+                "description": "Stripe payment gateway",
+            },
         ]
 
         for method in methods:
