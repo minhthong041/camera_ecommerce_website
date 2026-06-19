@@ -28,20 +28,23 @@ const RegisterPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setError('');
 
-    // Kiểm tra mật khẩu khớp nhau ở phía Frontend trước
     if (formData.password !== formData.confirmPassword) {
-      setError("Mật khẩu xác nhận không khớp!");
+      setError('Mật khẩu xác nhận không khớp!');
       return;
     }
 
     setIsLoading(true);
-
-    // Tách trường confirmPassword ra, chỉ gửi các trường database yêu cầu lên backend
-    const registerData = { ...formData };
-    delete registerData.confirmPassword;
-
+    
+    // ĐÃ SỬA: Map trường confirmPassword thành password_confirm theo chuẩn backend
+    const registerData = {
+      ...formData,
+      password_confirm: formData.confirmPassword 
+    };
+    // Xóa trường cũ dư thừa đi
+    delete registerData.confirmPassword; 
+    
     const result = await register(registerData);
     if (!result.success) {
       setError(result.message);

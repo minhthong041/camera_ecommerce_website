@@ -5,12 +5,12 @@ const authApi = {
   // API Đăng nhập
   login: (data) => {
     // data bao gồm { email, password }
-    return client.post('/auth/login', data);
+    return client.post('/auth/login/', data);
   },
 
   // API Đăng ký
   register: (data) => {
-    return client.post('/auth/register', data);
+    return client.post('/auth/register/', data);
   }
 };
 
