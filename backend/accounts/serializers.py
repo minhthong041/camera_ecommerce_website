@@ -1,10 +1,14 @@
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.db.models import Q
 from rest_framework import serializers
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Role, User
+
+
+password_reset_token_generator = PasswordResetTokenGenerator()
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -240,3 +244,129 @@ def build_token_response(user):
         "refresh": str(refresh),
         "user": UserProfileSerializer(user).data,
     }
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(write_only=True, trim_whitespace=False)
+    new_password = serializers.CharField(write_only=True, trim_whitespace=False)
+
+    def validate_old_password(self, value):
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Incorrect old password.")
+        return value
+
+    def validate_new_password(self, value):
+        user = self.context["request"].user
+        validate_password(value, user=user)
+        if user.check_password(value):
+            raise serializers.ValidationError(
+                "New password must be different from the current password."
+            )
+        return value
+
+    def save(self, **kwargs):
+        user = self.context["request"].user
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=("password",))
+        return user
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        normalized_email = value.strip().lower()
+        user = User.objects.filter(
+            email__iexact=normalized_email,
+            is_active=True,
+        ).first()
+        if user is None:
+            raise serializers.ValidationError(
+                "No active account was found for this email address."
+            )
+        self.user = user
+        return user.email
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    token = serializers.CharField(trim_whitespace=False)
+    new_password = serializers.CharField(write_only=True, trim_whitespace=False)
+
+    def validate(self, attrs):
+        normalized_email = attrs["email"].strip().lower()
+        user = User.objects.filter(
+            email__iexact=normalized_email,
+            is_active=True,
+        ).first()
+        if user is None or not password_reset_token_generator.check_token(
+            user,
+            attrs["token"],
+        ):
+            raise serializers.ValidationError(
+                {"token": "Invalid or expired token."}
+            )
+
+        validate_password(attrs["new_password"], user=user)
+        attrs["user"] = user
+        return attrs
+
+    def save(self, **kwargs):
+        user = self.validated_data["user"]
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=("password",))
+        return user
+
+
+def validate_otp_identifier(attrs):
+    email = attrs.get("email")
+    phone_number = attrs.get("phone_number")
+    if bool(email) == bool(phone_number):
+        raise serializers.ValidationError(
+            "Provide exactly one of email or phone_number."
+        )
+
+    if email:
+        identifier = email.strip().lower()
+        user = User.objects.filter(
+            email__iexact=identifier,
+            is_active=True,
+        ).first()
+        channel = "email"
+    else:
+        identifier = phone_number.strip()
+        user = User.objects.filter(
+            phone_number=identifier,
+            is_active=True,
+        ).first()
+        channel = "phone"
+
+    if user is None:
+        raise serializers.ValidationError(
+            {channel: "No active account was found for this identifier."}
+        )
+
+    attrs["identifier"] = identifier
+    attrs["channel"] = channel
+    attrs["user"] = user
+    return attrs
+
+
+class OTPRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=False)
+    phone_number = serializers.CharField(
+        max_length=20,
+        required=False,
+        trim_whitespace=True,
+    )
+
+    def validate(self, attrs):
+        return validate_otp_identifier(attrs)
+
+
+class OTPVerifySerializer(OTPRequestSerializer):
+    otp = serializers.RegexField(
+        regex=r"^\d{6}$",
+        error_messages={"invalid": "OTP must contain exactly 6 digits."},
+    )
