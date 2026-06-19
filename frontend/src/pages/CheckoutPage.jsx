@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import cartApi from "../api/cartApi";
 import orderApi from "../api/orderApi";
 import LoadingState from "../components/common/LoadingState";
+import ErrorState from "../components/common/ErrorState";
 
-// Hàm hỗ trợ đọc lỗi phức tạp từ Django REST Framework (DRF)
 const parseDrfError = (errData) => {
   if (typeof errData === "string") return errData;
   if (errData && typeof errData === "object") {
@@ -19,17 +19,30 @@ const parseDrfError = (errData) => {
   return "Lỗi không xác định";
 };
 
+// Hàm format địa chỉ chuẩn theo yêu cầu của Leader
+const formatAddress = (address) => {
+  if (!address) return "";
+  return [
+    address.address_line1,
+    address.address_line2,
+    address.ward?.name,
+    address.ward?.district?.name,
+    address.ward?.district?.city?.name,
+  ]
+    .filter(Boolean)
+    .join(", ");
+};
+
 const CheckoutPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  // STATE LƯU ID ĐƯỢC CHỌN (Không lưu string)
   const [selectedAddressId, setSelectedAddressId] = useState("");
   const [selectedShippingId, setSelectedShippingId] = useState("");
-  const [paymentGateway, setPaymentGateway] = useState("vnpay"); // VNPay hoặc Stripe
+  const [selectedPaymentId, setSelectedPaymentId] = useState("");
   const [formError, setFormError] = useState("");
 
-  // FETCH DỮ LIỆU TỪ BACKEND
+  // FETCH DỮ LIỆU
   const { data: cartData, isLoading: isCartLoading } = useQuery({
     queryKey: ["cart"],
     queryFn: () => cartApi.getCart(),
@@ -42,19 +55,40 @@ const CheckoutPage = () => {
     queryKey: ["shippingMethods"],
     queryFn: () => orderApi.getShippingMethods(),
   });
+  const { data: paymentMethodsData, isLoading: isPaymentLoading } = useQuery({
+    queryKey: ["paymentMethods"],
+    queryFn: () => orderApi.getPaymentMethods(),
+  });
 
   const cartItems = cartData?.cart_items || [];
   const addresses = addressesData?.results || addressesData || [];
   const shippingMethods = shippingData?.results || shippingData || [];
+  const paymentMethods =
+    paymentMethodsData?.results || paymentMethodsData || [];
 
-  // TÍNH TOÁN TIỀN
+  // Tự động chọn giá trị mặc định đầu tiên nếu có dữ liệu
+  useEffect(() => {
+    if (addresses.length > 0 && !selectedAddressId)
+      setSelectedAddressId(addresses[0].id.toString());
+    if (shippingMethods.length > 0 && !selectedShippingId)
+      setSelectedShippingId(shippingMethods[0].id.toString());
+    if (paymentMethods.length > 0 && !selectedPaymentId)
+      setSelectedPaymentId(paymentMethods[0].id.toString());
+  }, [
+    addresses,
+    shippingMethods,
+    paymentMethods,
+    selectedAddressId,
+    selectedShippingId,
+    selectedPaymentId,
+  ]);
+
   const subTotal = cartItems.reduce(
     (acc, item) =>
       acc + (item.product_item?.price || item.price || 0) * item.quantity,
     0,
   );
 
-  // Lấy phí ship dựa trên ID phương thức user đang chọn (Không hardcode nữa)
   const activeShippingMethod = shippingMethods.find(
     (m) => m.id.toString() === selectedShippingId.toString(),
   );
@@ -63,43 +97,43 @@ const CheckoutPage = () => {
     : 0;
   const finalTotal = subTotal + shippingFee;
 
-  // MUTATION: 1. TẠO ĐƠN HÀNG
+  // MUTATION 1: TẠO ĐƠN
   const checkoutMutation = useMutation({
     mutationFn: (payload) => orderApi.checkout(payload),
     onSuccess: (orderResponse) => {
-      queryClient.invalidateQueries({ queryKey: ["cart"] }); // Giỏ đã trống
-
-      // Sau khi tạo đơn, gọi tiếp API Payment (Bước 4 của leader)
-      const orderCode = orderResponse.order_code || orderResponse.id;
-      paymentMutation.mutate({ orderCode, gateway: paymentGateway });
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+      // Lấy ID trả về để truyền cho hàm Payment
+      const orderId = orderResponse.id;
+      paymentMutation.mutate({
+        orderId,
+        paymentMethodId: Number(selectedPaymentId),
+      });
     },
     onError: (error) => {
       setFormError(parseDrfError(error.data) || "Lỗi tạo đơn hàng.");
     },
   });
 
-  // MUTATION: 2. GỌI CỔNG THANH TOÁN
+  // MUTATION 2: TẠO THANH TOÁN
   const paymentMutation = useMutation({
-    mutationFn: ({ orderCode, gateway }) =>
-      orderApi.createPayment(orderCode, gateway),
-    onSuccess: (paymentRes, variables) => {
-      if (variables.gateway === "vnpay" && paymentRes.redirect_url) {
-        // Chuyển hướng user sang trang thanh toán VNPay
+    mutationFn: ({ orderId, paymentMethodId }) =>
+      orderApi.createPayment({ orderId, paymentMethodId }),
+    onSuccess: (paymentRes) => {
+      // Chuyển hướng VNPay nếu có redirect_url, ngược lại chuyển sang trang kết quả
+      if (paymentRes.redirect_url) {
         window.location.href = paymentRes.redirect_url;
       } else {
-        // Tạm thời nếu là Stripe hoặc lỗi thiếu URL thì về trang xác nhận
-        navigate(`/order-success?order_code=${variables.orderCode}`);
+        navigate("/payment-result?status=success");
       }
     },
     onError: (error) => {
       setFormError(
-        "Tạo đơn thành công nhưng lỗi khởi tạo cổng thanh toán: " +
-          (error.data?.detail || ""),
+        "Tạo đơn thành công nhưng lỗi thanh toán: " +
+          (error.data?.detail || "Vui lòng thử lại trong lịch sử đơn hàng."),
       );
     },
   });
 
-  // SUBMIT FORM (Đã chuyển button vào trong form)
   const handleSubmitOrder = (e) => {
     e.preventDefault();
     setFormError("");
@@ -108,17 +142,19 @@ const CheckoutPage = () => {
       return setFormError("Vui lòng chọn địa chỉ giao hàng.");
     if (!selectedShippingId)
       return setFormError("Vui lòng chọn phương thức vận chuyển.");
+    if (!selectedPaymentId)
+      return setFormError("Vui lòng chọn phương thức thanh toán.");
     if (cartItems.length === 0) return setFormError("Giỏ hàng trống.");
 
-    // Gửi ĐÚNG payload backend cần (Không gửi name, phone, email...)
     checkoutMutation.mutate({
       shipping_address_id: Number(selectedAddressId),
       shipping_method_id: Number(selectedShippingId),
-      promotion_code: null, // Hoặc lấy từ state nếu bạn có ô nhập mã giảm giá
+      promotion_code: null,
     });
   };
 
-  const isLoading = isCartLoading || isAddrLoading || isShipLoading;
+  const isLoading =
+    isCartLoading || isAddrLoading || isShipLoading || isPaymentLoading;
   if (isLoading)
     return <LoadingState message="Đang tải thông tin thanh toán..." />;
 
@@ -127,30 +163,24 @@ const CheckoutPage = () => {
       <h1 className="mb-8 text-2xl font-bold text-slate-800">
         Thanh toán đơn hàng
       </h1>
-
       <div className="flex flex-col gap-8 lg:flex-row">
-        {/* Form chọn thông tin */}
         <div className="w-full lg:w-2/3">
           <div className="p-6 bg-white border rounded-lg shadow-sm">
             {formError && (
-              <div
-                className="p-3 mb-6 text-sm text-red-600 bg-red-50 rounded-md border border-red-100"
-                role="alert"
-              >
+              <div className="p-3 mb-6 text-sm text-red-600 bg-red-50 rounded-md border border-red-100">
                 {formError}
               </div>
             )}
 
             <form onSubmit={handleSubmitOrder} className="space-y-6">
-              {/* CHỌN ĐỊA CHỈ */}
+              {/* ĐỊA CHỈ */}
               <div>
                 <h2 className="mb-4 text-lg font-bold text-slate-800">
                   1. Chọn địa chỉ giao hàng
                 </h2>
                 {addresses.length === 0 ? (
                   <p className="text-sm text-red-500">
-                    Bạn chưa có địa chỉ nào. Vui lòng vào trang cá nhân để thêm
-                    địa chỉ.
+                    Bạn chưa có địa chỉ. Vui lòng thêm trong trang cá nhân.
                   </p>
                 ) : (
                   <div className="space-y-3">
@@ -161,8 +191,8 @@ const CheckoutPage = () => {
                       >
                         <input
                           type="radio"
-                          name="address"
                           value={addr.id}
+                          checked={selectedAddressId === addr.id.toString()}
                           onChange={(e) => setSelectedAddressId(e.target.value)}
                           className="mt-1 mr-3 accent-orange-500"
                         />
@@ -171,8 +201,7 @@ const CheckoutPage = () => {
                             {addr.receiver_name} - {addr.phone_number}
                           </p>
                           <p className="text-sm text-slate-600">
-                            {addr.street_address}, {addr.ward}, {addr.district},{" "}
-                            {addr.city}
+                            {formatAddress(addr)}
                           </p>
                         </div>
                       </label>
@@ -181,7 +210,7 @@ const CheckoutPage = () => {
                 )}
               </div>
 
-              {/* CHỌN PHƯƠNG THỨC GIAO HÀNG (Dữ liệu thật) */}
+              {/* VẬN CHUYỂN */}
               <div className="pt-6 border-t border-gray-100">
                 <h2 className="mb-4 text-lg font-bold text-slate-800">
                   2. Đơn vị vận chuyển
@@ -195,8 +224,8 @@ const CheckoutPage = () => {
                       <div className="flex items-center">
                         <input
                           type="radio"
-                          name="shipping"
                           value={method.id}
+                          checked={selectedShippingId === method.id.toString()}
                           onChange={(e) =>
                             setSelectedShippingId(e.target.value)
                           }
@@ -217,46 +246,34 @@ const CheckoutPage = () => {
                 </div>
               </div>
 
-              {/* CHỌN CỔNG THANH TOÁN */}
+              {/* THANH TOÁN (Render linh động từ backend, tạm ẩn Stripe nếu có) */}
               <div className="pt-6 border-t border-gray-100">
                 <h2 className="mb-4 text-lg font-bold text-slate-800">
                   3. Phương thức thanh toán
                 </h2>
                 <div className="space-y-3">
-                  <label
-                    className={`flex items-center p-4 border rounded-lg cursor-pointer ${paymentGateway === "vnpay" ? "border-blue-500 bg-blue-50" : "hover:bg-gray-50"}`}
-                  >
-                    <input
-                      type="radio"
-                      name="payment"
-                      value="vnpay"
-                      checked={paymentGateway === "vnpay"}
-                      onChange={(e) => setPaymentGateway(e.target.value)}
-                      className="mr-3 accent-blue-500"
-                    />
-                    <span className="font-medium text-slate-800">
-                      Thanh toán qua VNPay
-                    </span>
-                  </label>
-                  <label
-                    className={`flex items-center p-4 border rounded-lg cursor-pointer ${paymentGateway === "stripe" ? "border-purple-500 bg-purple-50" : "hover:bg-gray-50"}`}
-                  >
-                    <input
-                      type="radio"
-                      name="payment"
-                      value="stripe"
-                      checked={paymentGateway === "stripe"}
-                      onChange={(e) => setPaymentGateway(e.target.value)}
-                      className="mr-3 accent-purple-500"
-                    />
-                    <span className="font-medium text-slate-800">
-                      Thanh toán thẻ quốc tế (Stripe)
-                    </span>
-                  </label>
+                  {paymentMethods
+                    .filter((p) => !p.name?.toLowerCase().includes("stripe"))
+                    .map((method) => (
+                      <label
+                        key={method.id}
+                        className={`flex items-center p-4 border rounded-lg cursor-pointer ${selectedPaymentId === method.id.toString() ? "border-blue-500 bg-blue-50" : "hover:bg-gray-50"}`}
+                      >
+                        <input
+                          type="radio"
+                          value={method.id}
+                          checked={selectedPaymentId === method.id.toString()}
+                          onChange={(e) => setSelectedPaymentId(e.target.value)}
+                          className="mr-3 accent-blue-500"
+                        />
+                        <span className="font-medium text-slate-800">
+                          {method.name || method.gateway_name}
+                        </span>
+                      </label>
+                    ))}
                 </div>
               </div>
 
-              {/* Nút Submit nằm TRONG form theo yêu cầu leader */}
               <button
                 type="submit"
                 disabled={
@@ -264,73 +281,66 @@ const CheckoutPage = () => {
                   paymentMutation.isPending ||
                   cartItems.length === 0
                 }
-                className="w-full py-4 mt-6 text-lg font-semibold text-white transition duration-200 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 flex justify-center items-center gap-2 shadow-md"
+                className="w-full py-4 mt-6 text-lg font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:bg-gray-400"
               >
                 {checkoutMutation.isPending || paymentMutation.isPending
-                  ? "Đang chuyển hướng đến cổng thanh toán..."
+                  ? "Đang xử lý..."
                   : "Tiến hành thanh toán"}
               </button>
             </form>
           </div>
         </div>
 
-        {/* Khối tóm tắt Đơn Hàng (Giữ nguyên giao diện của bạn) */}
+        {/* TÓM TẮT ĐƠN HÀNG */}
         <div className="w-full lg:w-1/3">
           <div className="p-6 bg-slate-50 border border-slate-200 rounded-lg shadow-sm sticky top-6">
             <h3 className="pb-4 mb-4 text-lg font-bold border-b border-slate-200 text-slate-800">
               Đơn hàng của bạn
             </h3>
-            {cartItems.length === 0 ? (
-              <p className="text-sm text-center text-gray-500 py-4">
-                Giỏ hàng trống.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {cartItems.map((item) => {
-                  const productData = item.product_item || item;
-                  const productName =
-                    productData.product_name ||
-                    productData.product?.name ||
-                    "Sản phẩm";
-                  const price = productData.price || 0;
-                  return (
-                    <div key={item.id} className="flex justify-between text-sm">
-                      <span className="pr-4 text-slate-600 line-clamp-2">
-                        {productName}{" "}
-                        <span className="font-medium text-slate-800">
-                          x{item.quantity}
-                        </span>
-                      </span>
-                      <span className="font-medium text-slate-800">
-                        {(price * item.quantity).toLocaleString("vi-VN")} ₫
-                      </span>
-                    </div>
-                  );
-                })}
-                <div className="pt-4 border-t border-slate-200">
-                  <div className="flex justify-between mb-2 text-sm text-slate-600">
-                    <span>Tạm tính</span>
+            {cartItems.map((item) => {
+              const productData = item.product_item || item;
+              return (
+                <div
+                  key={item.id}
+                  className="flex justify-between text-sm mb-4"
+                >
+                  <span className="pr-4 text-slate-600 line-clamp-2">
+                    {productData.product_name || productData.product?.name}{" "}
                     <span className="font-medium text-slate-800">
-                      {subTotal.toLocaleString("vi-VN")} ₫
+                      x{item.quantity}
                     </span>
-                  </div>
-                  <div className="flex justify-between mb-2 text-sm text-slate-600">
-                    <span>Phí vận chuyển</span>
-                    <span className="font-medium text-slate-800">
-                      {shippingFee === 0
-                        ? "Chưa tính"
-                        : `${shippingFee.toLocaleString("vi-VN")} ₫`}
-                    </span>
-                  </div>
-                  <div className="flex justify-between pt-4 mt-4 text-lg font-bold border-t border-slate-200">
-                    <span className="text-slate-800">Tổng cộng</span>
-                    <span className="text-orange-600">
-                      {finalTotal.toLocaleString("vi-VN")} ₫
-                    </span>
-                  </div>
+                  </span>
+                  <span className="font-medium text-slate-800">
+                    {((productData.price || 0) * item.quantity).toLocaleString(
+                      "vi-VN",
+                    )}{" "}
+                    ₫
+                  </span>
                 </div>
+              );
+            })}
+            <div className="pt-4 border-t border-slate-200">
+              <div className="flex justify-between mb-2 text-sm text-slate-600">
+                <span>Tạm tính</span>
+                <span className="font-medium text-slate-800">
+                  {subTotal.toLocaleString("vi-VN")} ₫
+                </span>
               </div>
-            )}
+              <div className="flex justify-between mb-2 text-sm text-slate-600">
+                <span>Phí vận chuyển</span>
+                <span className="font-medium text-slate-800">
+                  {shippingFee === 0
+                    ? "Chưa tính"
+                    : `${shippingFee.toLocaleString("vi-VN")} ₫`}
+                </span>
+              </div>
+              <div className="flex justify-between pt-4 mt-4 text-lg font-bold border-t border-slate-200">
+                <span className="text-slate-800">Tổng cộng</span>
+                <span className="text-orange-600">
+                  {finalTotal.toLocaleString("vi-VN")} ₫
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

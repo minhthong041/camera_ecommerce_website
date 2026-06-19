@@ -10,7 +10,7 @@ import LoginPage from "./pages/LoginPage";
 import ProductDetailPage from "./pages/ProductDetailPage";
 import ProductListPage from "./pages/ProductListPage";
 import RegisterPage from "./pages/RegisterPage";
-import OrderSuccessPage from './pages/OrderSuccessPage';
+import PaymentResultPage from './pages/PaymentResultPage';
 
 import ProfilePage from "./pages/ProfilePage";
 import EditProfilePage from "./pages/EditProfilePage";
@@ -61,7 +61,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/order-success" element={<OrderSuccessPage />} />
+        <Route path="/payment-result" element={<PaymentResultPage />} />
       </Routes>
     </AuthProvider>
   );
