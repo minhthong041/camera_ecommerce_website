@@ -30,6 +30,11 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       DB_HOST: db
       DB_PORT: 5432
+      CACHE_BACKEND: ${CACHE_BACKEND:-django.core.cache.backends.locmem.LocMemCache}
+      CACHE_LOCATION: ${CACHE_LOCATION:-camera-ecommerce-security-cache}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-no-reply@camera-ecommerce.local}
+      PASSWORD_RESET_TIMEOUT: ${PASSWORD_RESET_TIMEOUT:-900}
       VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
       VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
       VNPAY_PAYMENT_URL: ${VNPAY_PAYMENT_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}

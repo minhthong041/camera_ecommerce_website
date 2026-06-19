@@ -1,15 +1,74 @@
+import logging
+import secrets
+
+from django.conf import settings
+from django.core.cache import cache
+from django.core.mail import send_mail
+from django.db import transaction
+from django.utils import timezone
+from django.utils.crypto import constant_time_compare
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.token_blacklist.models import (
+    BlacklistedToken,
+    OutstandingToken,
+)
 
 from .serializers import (
+    ChangePasswordSerializer,
     LoginSerializer,
     LogoutSerializer,
+    OTPRequestSerializer,
+    OTPVerifySerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
     RegisterSerializer,
     UserProfileSerializer,
     build_token_response,
+    password_reset_token_generator,
 )
+
+
+logger = logging.getLogger(__name__)
+OTP_TIMEOUT_SECONDS = 5 * 60
+OTP_VERIFIED_TIMEOUT_SECONDS = 30 * 60
+
+
+def otp_cache_key(identifier):
+    return f"otp_{identifier}"
+
+
+def send_otp_code(channel, destination, otp):
+    if channel == "email":
+        send_mail(
+            subject="Your verification code",
+            message=f"Your verification code is {otp}. It expires in 5 minutes.",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[destination],
+            fail_silently=False,
+        )
+        return
+
+    # Replace this development log with an SMS provider in production.
+    logger.info("Development phone OTP for %s: %s", destination, otp)
+
+
+def blacklist_active_refresh_tokens(user):
+    active_token_ids = list(
+        OutstandingToken.objects.filter(
+            user=user,
+            expires_at__gt=timezone.now(),
+        )
+        .exclude(blacklistedtoken__isnull=False)
+        .values_list("id", flat=True)
+    )
+    BlacklistedToken.objects.bulk_create(
+        [BlacklistedToken(token_id=token_id) for token_id in active_token_ids],
+        ignore_conflicts=True,
+    )
+    return len(active_token_ids)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -58,3 +117,129 @@ class AccountView(APIView):
     def delete(self, request, *args, **kwargs):
         request.user.deactivate_account()
         return Response({"detail": "Account deactivated successfully."})
+
+
+class ChangePasswordView(generics.GenericAPIView):
+    serializer_class = ChangePasswordSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": "Password changed successfully."})
+
+
+class PasswordResetRequestView(generics.GenericAPIView):
+    serializer_class = PasswordResetRequestSerializer
+    permission_classes = (AllowAny,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.user
+        token = password_reset_token_generator.make_token(user)
+
+        try:
+            send_mail(
+                subject="Reset your password",
+                message=(
+                    "Use the following token with your email address to reset "
+                    f"your password:\n\n{token}"
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+        except Exception:
+            logger.exception("Unable to send password reset email")
+            return Response(
+                {"detail": "Unable to send password reset email."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response({"detail": "Password reset email sent."})
+
+
+class PasswordResetConfirmView(generics.GenericAPIView):
+    serializer_class = PasswordResetConfirmSerializer
+    permission_classes = (AllowAny,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            user = serializer.save()
+            # Password resets revoke every outstanding refresh token.
+            blacklist_active_refresh_tokens(user)
+
+        return Response({"detail": "Password reset successfully."})
+
+
+class OTPRequestView(generics.GenericAPIView):
+    serializer_class = OTPRequestSerializer
+    permission_classes = (AllowAny,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        identifier = serializer.validated_data["identifier"]
+        channel = serializer.validated_data["channel"]
+        otp = f"{secrets.randbelow(1_000_000):06d}"
+
+        try:
+            send_otp_code(channel, identifier, otp)
+        except Exception:
+            logger.exception("Unable to send OTP")
+            return Response(
+                {"detail": "Unable to send verification code."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        cache.set(otp_cache_key(identifier), otp, timeout=OTP_TIMEOUT_SECONDS)
+        return Response({"detail": "Verification code sent."})
+
+
+class OTPVerifyView(generics.GenericAPIView):
+    serializer_class = OTPVerifySerializer
+    permission_classes = (AllowAny,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        identifier = serializer.validated_data["identifier"]
+        submitted_otp = serializer.validated_data["otp"]
+        cached_otp = cache.get(otp_cache_key(identifier))
+
+        if cached_otp is None or not constant_time_compare(
+            str(cached_otp),
+            submitted_otp,
+        ):
+            return Response(
+                {"otp": ["Invalid or expired OTP."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cache.delete(otp_cache_key(identifier))
+        cache.set(
+            f"otp_verified_{identifier}",
+            True,
+            timeout=OTP_VERIFIED_TIMEOUT_SECONDS,
+        )
+        return Response({"detail": "OTP verified successfully."})
+
+
+class LogoutAllView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        # Blacklist all unexpired refresh tokens issued by SimpleJWT for this user.
+        with transaction.atomic():
+            blacklisted_count = blacklist_active_refresh_tokens(request.user)
+
+        return Response(
+            {
+                "detail": "All devices logged out successfully.",
+                "blacklisted_tokens": blacklisted_count,
+            }
+        )

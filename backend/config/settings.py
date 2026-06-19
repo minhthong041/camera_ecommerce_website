@@ -180,6 +180,34 @@ SIMPLE_JWT = {
 }
 
 
+# Account security
+CACHES = {
+    "default": {
+        "BACKEND": config(
+            "CACHE_BACKEND",
+            default="django.core.cache.backends.locmem.LocMemCache",
+        ),
+        "LOCATION": config(
+            "CACHE_LOCATION",
+            default="camera-ecommerce-security-cache",
+        ),
+    }
+}
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND",
+    default="django.core.mail.backends.console.EmailBackend",
+)
+DEFAULT_FROM_EMAIL = config(
+    "DEFAULT_FROM_EMAIL",
+    default="no-reply@camera-ecommerce.local",
+)
+PASSWORD_RESET_TIMEOUT = config(
+    "PASSWORD_RESET_TIMEOUT",
+    default=15 * 60,
+    cast=int,
+)
+
+
 # Payment gateways
 VNPAY_TMN_CODE = config("VNPAY_TMN_CODE", default="")
 VNPAY_HASH_SECRET = config("VNPAY_HASH_SECRET", default="")
