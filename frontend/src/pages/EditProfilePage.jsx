@@ -31,12 +31,12 @@ export default function EditProfilePage() {
         setFormData({
           full_name: data.full_name || '',
           email: data.email || '',
-          phone: data.phone_number || '', // Khớp với trường phone_number từ Backend đổ về
+          phone: data.phone_number || '', 
           gender: data.gender || 'male',
           address: data.address || ''
         });
       } catch (err) {
-        console.error("Error fetching profile:", err); // Dùng biến err để không bị lỗi ESLint no-unused-vars
+        console.error("Error fetching profile:", err); 
         setAlert({ type: 'error', message: 'Không thể tải dữ liệu để chỉnh sửa.' });
       } finally {
         setIsLoading(false);
