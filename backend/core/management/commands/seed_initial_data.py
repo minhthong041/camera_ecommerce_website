@@ -46,8 +46,9 @@ class Command(BaseCommand):
             "confirmed",
             "processing",
             "shipping",
-            "completed",
+            "delivered",
             "cancelled",
+            "refunded",
         ]
 
         for name in statuses:
