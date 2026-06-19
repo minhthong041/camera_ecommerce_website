@@ -66,6 +66,7 @@ class PaymentWebhookTests(TestCase):
             price=Decimal("0.00"),
         )
         cls.order_pending = OrderStatus.objects.create(name="Pending")
+        cls.order_confirmed = OrderStatus.objects.create(name="Confirmed")
         cls.order_processing = OrderStatus.objects.create(name="Processing")
         cls.order_cancelled = OrderStatus.objects.create(name="Cancelled")
         cls.payment_pending = PaymentStatus.objects.create(name="Pending")
@@ -73,6 +74,7 @@ class PaymentWebhookTests(TestCase):
         cls.payment_failed = PaymentStatus.objects.create(name="Failed")
         cls.vnpay_method = PaymentMethod.objects.create(name="VNPay")
         cls.stripe_method = PaymentMethod.objects.create(name="Stripe")
+        cls.cod_method = PaymentMethod.objects.create(name="COD")
 
     def setUp(self):
         self.client = APIClient()
@@ -143,7 +145,7 @@ class PaymentWebhookTests(TestCase):
         self.assertEqual(payment.amount, order.total_amount)
         self.assertEqual(payment.status, self.payment_pending)
 
-    @patch("payments.views.stripe.StripeClient")
+    @patch("payments.gateways.stripe.StripeClient")
     def test_stripe_payment_creation_returns_client_secret(self, stripe_client):
         payment_intent = SimpleNamespace(
             id="pi_test_created_001",
@@ -178,6 +180,47 @@ class PaymentWebhookTests(TestCase):
         )
         self.assertEqual(create_params["amount"], 100000)
         self.assertEqual(create_params["currency"], "vnd")
+
+    def test_cod_payment_creation_confirms_order_without_gateway_action(self):
+        order = self.create_order()
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/payments/",
+            {
+                "order_id": order.pk,
+                "payment_method_id": self.cod_method.pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        order.refresh_from_db()
+        payment = Payment.objects.get(pk=response.data["payment_id"])
+        self.assertEqual(order.status, self.order_confirmed)
+        self.assertEqual(payment.status, self.payment_pending)
+        self.assertFalse(response.data["requires_action"])
+
+    @patch("payments.views.initialize_payment_gateway")
+    def test_pending_online_payment_can_retry_gateway_initialization(self, initialize):
+        order, payment = self.create_order_and_payment(self.vnpay_method)
+        initialize.return_value = (
+            "vnpay",
+            {"redirect_url": "https://sandbox.example/retry"},
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            f"/api/payments/{payment.pk}/initialize/",
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["payment_id"], payment.pk)
+        self.assertEqual(
+            response.data["redirect_url"],
+            "https://sandbox.example/retry",
+        )
 
     def test_vnpay_failed_callback_restores_stock_only_once(self):
         order, payment = self.create_order_and_payment(self.vnpay_method)

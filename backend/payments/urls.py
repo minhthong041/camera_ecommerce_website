@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     PaymentCreateView,
+    PaymentInitializeView,
     PaymentMethodListView,
     PaymentStatusListView,
     StripeWebhookView,
@@ -15,6 +16,11 @@ urlpatterns = [
     path("methods/", PaymentMethodListView.as_view(), name="payment-method-list"),
     path("statuses/", PaymentStatusListView.as_view(), name="payment-status-list"),
     path("", PaymentCreateView.as_view(), name="payment-create"),
+    path(
+        "<int:pk>/initialize/",
+        PaymentInitializeView.as_view(),
+        name="payment-initialize",
+    ),
     path(
         "vnpay/callback/",
         VNPayCallbackView.as_view(),
