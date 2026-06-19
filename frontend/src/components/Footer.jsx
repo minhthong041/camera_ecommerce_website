@@ -28,11 +28,11 @@ export default function Footer() {
             <div className="space-y-3">
               <div>
                 <span className="block text-xs text-gray-500">Tư vấn mua hàng</span>
-                <span className="text-white font-bold text-base hover:text-amber-500 cursor-pointer">0999.999.999</span>
+                <span className="text-white font-bold text-base hover:text-amber-500 cursor-pointer">123 4567</span>
               </div>
               <div>
                 <span className="block text-xs text-gray-500">Hỗ trợ kỹ thuật</span>
-                <span className="text-white font-bold text-base hover:text-amber-500 cursor-pointer">0999.999.999</span>
+                <span className="text-white font-bold text-base hover:text-amber-500 cursor-pointer">123 4567</span>
               </div>
             </div>
           </div>

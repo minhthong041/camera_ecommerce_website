@@ -34,13 +34,23 @@ export default function Header() {
         <div className="container flex items-center justify-between px-4 mx-auto">
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1">
-              <Phone className="w-3 h-3 text-amber-500" /> Hotline: 0999.999.999
+              <Phone className="w-3 h-3 text-amber-500" /> Hotline: 123 4567
             </span>
             <span>| Giờ làm việc: 09:00 - 20:30</span>
           </div>
           <div className="flex gap-4">
-            <a href="#" className="transition hover:text-amber-500">Hệ thống showroom</a>
-            <a href="#" className="transition hover:text-amber-500">Thu cũ đổi mới</a>
+            <Link
+              to="/about"
+              className="hover:text-amber-500 transition-colors"
+            >
+              About Us
+            </Link>
+            <Link
+              to="/contact"
+              className="hover:text-amber-500 transition-colors"
+            >
+              Contact
+            </Link>
           </div>
         </div>
       </div>
@@ -48,7 +58,6 @@ export default function Header() {
       {/* Main Header */}
       <header className="bg-white">
         <div className="container flex items-center justify-between h-20 gap-6 px-4 mx-auto">
-
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 shrink-0">
             <div className="text-2xl font-black tracking-tighter text-gray-900">
@@ -73,8 +82,26 @@ export default function Header() {
           {/* Actions */}
           <div className="flex items-center gap-6">
             <nav className="items-center hidden gap-6 text-sm font-semibold text-gray-700 lg:flex">
-              <NavLink to="/" className={({isActive}) => isActive ? "text-amber-500" : "hover:text-amber-500 transition"}>Trang chủ</NavLink>
-              <NavLink to="/products" className={({isActive}) => isActive ? "text-amber-500" : "hover:text-amber-500 transition"}>Sản phẩm</NavLink>
+              <NavLink
+                to="/"
+                className={({ isActive }) =>
+                  isActive
+                    ? "text-amber-500"
+                    : "hover:text-amber-500 transition"
+                }
+              >
+                Trang chủ
+              </NavLink>
+              <NavLink
+                to="/products"
+                className={({ isActive }) =>
+                  isActive
+                    ? "text-amber-500"
+                    : "hover:text-amber-500 transition"
+                }
+              >
+                Sản phẩm
+              </NavLink>
             </nav>
 
             <div className="flex items-center gap-4 pl-6 border-l border-gray-200">
@@ -82,7 +109,10 @@ export default function Header() {
                 <Heart className="w-5 h-5" />
               </button>
 
-              <Link to="/cart" className="relative p-1 text-gray-700 hover:text-amber-500">
+              <Link
+                to="/cart"
+                className="relative p-1 text-gray-700 hover:text-amber-500"
+              >
                 <ShoppingCart className="w-5 h-5" />
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                   2
@@ -102,8 +132,12 @@ export default function Header() {
                   >
                     <User className="w-5 h-5" />
                     <div className="flex flex-col items-start hidden sm:flex max-w-[110px]">
-                      <span className="text-[9px] text-gray-400 uppercase font-bold tracking-wider leading-none">Xin chào</span>
-                      <span className="text-xs font-bold text-gray-900 truncate w-full mt-0.5">{user.full_name || user.username}</span>
+                      <span className="text-[9px] text-gray-400 uppercase font-bold tracking-wider leading-none">
+                        Xin chào
+                      </span>
+                      <span className="text-xs font-bold text-gray-900 truncate w-full mt-0.5">
+                        {user.full_name || user.username}
+                      </span>
                     </div>
                   </button>
 
@@ -136,11 +170,13 @@ export default function Header() {
                   </div>
                 </div>
               ) : (
-                <Link to="/login" className="p-1 text-gray-700 hover:text-amber-500">
+                <Link
+                  to="/login"
+                  className="p-1 text-gray-700 hover:text-amber-500"
+                >
                   <User className="w-5 h-5" />
                 </Link>
               )}
-
             </div>
           </div>
         </div>
