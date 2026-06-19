@@ -9,8 +9,7 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api'
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -21,7 +20,6 @@ export const apiClient = axios.create({
   timeout: 10000,
 })
 
-// Gắn Token vào Header
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
@@ -30,68 +28,82 @@ apiClient.interceptors.request.use(
     }
     return config
   },
-  (error) => {
-    return Promise.reject(error)
-  }
+  (error) => Promise.reject(error)
 )
 
-// Xử lý lỗi trả về & Tự động Refresh Token
+// Khai báo biến giữ Promise để xử lý concurrent refresh requests
+let refreshTokenPromise = null;
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    // NẾU LỖI 401 (HẾT HẠN TOKEN) VÀ CHƯA TỪNG THỬ LẠI
+    // Nếu lỗi 401 và chưa từng thử lại
     if (error.response && error.response.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true; // Đánh dấu là đang thử lại để tránh lặp vô hạn
+      originalRequest._retry = true;
+
+      const refreshToken = localStorage.getItem('refresh');
+      
+      // Nếu không có refresh token thì văng ra login luôn
+      if (!refreshToken) {
+        window.location.href = '/login';
+        return Promise.reject(new ApiError('Phiên đăng nhập đã hết hạn', { status: 401 }));
+      }
+
+      // NẾU CHƯA CÓ AI ĐI XIN TOKEN THÌ BẮT ĐẦU XIN
+      if (!refreshTokenPromise) {
+        refreshTokenPromise = axios.post(`${API_BASE_URL}/auth/refresh/`, { refresh: refreshToken })
+          .then(res => {
+            const newAccess = res.data.access;
+            const newRefresh = res.data.refresh; // Lấy cả refresh token mới
+            
+            localStorage.setItem('token', newAccess);
+            if (newRefresh) {
+              localStorage.setItem('refresh', newRefresh); // Lưu refresh token mới theo cơ chế Rotation
+            }
+            return newAccess;
+          })
+          .catch(err => {
+            localStorage.removeItem('token');
+            localStorage.removeItem('refresh');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+            return Promise.reject(err);
+          })
+          .finally(() => {
+            // Xin xong (hoặc thất bại) thì xóa Promise đi để lần sau còn chạy lại được
+            refreshTokenPromise = null; 
+          });
+      }
 
       try {
-        const refreshToken = localStorage.getItem('refresh');
-        if (refreshToken) {
-          // Dùng axios thô (không dùng apiClient) để tránh chạy lại interceptor này
-          const res = await axios.post(`${API_BASE_URL}/auth/refresh/`, { refresh: refreshToken });
-          
-          const newAccess = res.data.access;
-          localStorage.setItem('token', newAccess);
-
-          // Gắn token mới vào request bị lỗi cũ và gọi lại
-          originalRequest.headers.Authorization = `Bearer ${newAccess}`;
-          return apiClient(originalRequest);
-        }
-      } catch (refreshError) {
-        console.error("Lỗi khi refresh token:", refreshError); // Thêm dòng này
-        // Nếu refresh token cũng hết hạn -> Đá văng ra màn hình đăng nhập
-        localStorage.removeItem('token');
-        localStorage.removeItem('refresh');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
+        // TẤT CẢ CÁC REQUEST 401 SẼ ĐỨNG ĐỢI Ở ĐÂY cho đến khi Token mới được trả về
+        const newAccess = await refreshTokenPromise;
+        originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+        return apiClient(originalRequest);
+      } catch {
         return Promise.reject(new ApiError('Phiên đăng nhập đã hết hạn', { status: 401 }));
       }
     }
 
-    // Các lỗi khác vẫn ném ra ApiError như cũ
+    // Xử lý các lỗi khác
     if (error.response) {
-      const message =
-        error.response.data?.detail ??
-        error.response.statusText ??
-        'API request failed'
-
+      const message = error.response.data?.detail ?? error.response.statusText ?? 'API request failed'
       return Promise.reject(
         new ApiError(message, {
           status: error.response.status,
           data: error.response.data,
-        }),
+        })
       )
     }
 
     if (error.request) {
-      return Promise.reject(
-        new ApiError('Cannot connect to the API server. Please try again.'),
-      )
+      return Promise.reject(new ApiError('Cannot connect to the API server. Please try again.'))
     }
 
     return Promise.reject(new ApiError(error.message))
-  },
+  }
 )
 
 export default apiClient
