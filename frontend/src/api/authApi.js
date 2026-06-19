@@ -1,17 +1,13 @@
-// src/api/authApi.js
-import client from './client'; // Import client mà bạn của bạn đã cấu hình sẵn
+import client from './client';
 
 const authApi = {
-  // API Đăng nhập
-  login: (data) => {
-    // data bao gồm { email, password }
-    return client.post('/auth/login/', data);
-  },
-
-  // API Đăng ký
-  register: (data) => {
-    return client.post('/auth/register/', data);
-  }
+  login: (data) => client.post('/auth/login/', data),
+  register: (data) => client.post('/auth/register/', data),
+  // Thêm các endpoint bị thiếu
+  refresh: (data) => client.post('/auth/refresh/', data),
+  logout: (data) => client.post('/auth/logout/', data),
+  getProfile: () => client.get('/auth/profile/'),
+  getAccount: () => client.get('/auth/account/')
 };
 
 export default authApi;

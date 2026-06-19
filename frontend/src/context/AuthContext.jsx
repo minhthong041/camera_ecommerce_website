@@ -6,27 +6,31 @@ import authApi from '../api/authApi';
 export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  // Tối ưu hóa: Đọc localStorage ngay lúc khởi tạo state, bỏ hẳn useEffect
   const [user, setUser] = useState(() => {
     const userData = localStorage.getItem('user');
     return userData ? JSON.parse(userData) : null;
   });
   
-  const [loading] = useState(false); // Không cần loading nữa vì đọc localStorage là đồng bộ
+  const [loading] = useState(false);
   const navigate = useNavigate();
 
-  const login = async (email, password) => {
+  const login = async (identifier, password) => {
     try {
-      const response = await authApi.login({ email, password });
-      const { access, user: userData } = response.data; 
+      const response = await authApi.login({ identifier, password });
+      
+      // Lỗi #1: Lấy thêm refresh token
+      const { access, refresh, user: userData } = response.data; 
       
       localStorage.setItem('token', access);
+      localStorage.setItem('refresh', refresh); // Lưu refresh token vào máy
       localStorage.setItem('user', JSON.stringify(userData));
       setUser(userData);
       navigate('/'); 
       return { success: true };
     } catch (error) {
-      return { success: false, message: error.response?.data?.message || 'Đăng nhập thất bại' };
+      // Lỗi #3: Đọc đúng cấu trúc error.data từ ApiError (không dùng error.response nữa)
+      const errorMsg = error.data?.detail || error.data?.message || 'Đăng nhập thất bại';
+      return { success: false, message: errorMsg };
     }
   };
 
@@ -36,15 +40,29 @@ export const AuthProvider = ({ children }) => {
       navigate('/login'); 
       return { success: true };
     } catch (error) {
-      return { success: false, message: error.response?.data?.message || 'Đăng ký thất bại' };
+      // Lỗi #3: Tương tự như trên
+      const errorMsg = error.data?.detail || error.data?.message || 'Đăng ký thất bại';
+      return { success: false, message: errorMsg };
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setUser(null);
-    navigate('/login');
+  const logout = async () => {
+    // Lỗi #2: Gọi backend để blacklist refresh token trước khi xóa ở local
+    try {
+      const refreshToken = localStorage.getItem('refresh');
+      if (refreshToken) {
+        await authApi.logout({ refresh: refreshToken });
+      }
+    } catch (error) {
+      console.error("Lỗi khi logout trên server:", error);
+    } finally {
+      // Dù gọi API thành công hay lỗi mạng thì vẫn phải xóa data ở máy để user thoát ra
+      localStorage.removeItem('token');
+      localStorage.removeItem('refresh');
+      localStorage.removeItem('user');
+      setUser(null);
+      navigate('/login');
+    }
   };
 
   return (
