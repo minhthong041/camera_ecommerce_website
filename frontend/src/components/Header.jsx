@@ -81,7 +81,7 @@ export default function Header() {
                   </Link>
                   
                   {/* Dropdown ẩn, tự động hiện khi đưa chuột vào vùng tài khoản */}
-                  <div className="absolute right-0 z-50 invisible pt-4 transition-all duration-200 opacity-0 w-48 group-hover:opacity-100 group-hover:visible">
+                  <div className="absolute hidden group-hover:block group-focus-within:block focus-within:block right-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-lg">
                     <div className="flex flex-col py-1.5 bg-white border border-gray-100 shadow-xl rounded-xl">
                       <Link to="/profile" className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-amber-50 hover:text-amber-600 transition">
                         <User className="w-3.5 h-3.5" /> Hồ sơ của tôi

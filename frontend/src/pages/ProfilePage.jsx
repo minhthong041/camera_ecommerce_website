@@ -55,16 +55,16 @@ export default function ProfilePage() {
           </div>
           
           <nav className="flex flex-col gap-1">
-            <Link to="/profile" className="flex items-center gap-3 px-4 py-3 text-sm font-bold text-amber-600 bg-amber-50 rounded-xl">
-              <User className="w-5 h-5" /> Hồ sơ của tôi
-            </Link>
-            <Link to="/profile" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
-              <Package className="w-5 h-5" /> Đơn hàng của tôi
-            </Link>
-            <Link to="/profile" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
-              <Shield className="w-5 h-5" /> Bảo mật & Mật khẩu
-            </Link>
-          </nav>
+  <Link to="/profile" className="flex items-center gap-3 px-4 py-3 text-sm font-bold text-amber-600 bg-amber-50 rounded-xl">
+    <User className="w-5 h-5" /> Hồ sơ của tôi
+  </Link>
+  <Link to="/profile/orders" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
+    <Package className="w-5 h-5" /> Đơn hàng của tôi
+  </Link>
+  <Link to="/profile/security" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
+    <Shield className="w-5 h-5" /> Bảo mật & Mật khẩu
+  </Link>
+</nav>
         </div>
 
         {/* Main Content */}

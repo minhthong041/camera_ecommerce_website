@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { User, Package, Shield, Save, X, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import authApi from "../api/authApi";
+import { AuthContext } from '../context/AuthContext'; // Đảm bảo đường dẫn này đúng với cấu trúc dự án của bạn
 
 export default function EditProfilePage() {
   const navigate = useNavigate();
+  const { updateUser } = useContext(AuthContext); // Lấy hàm đồng bộ state từ AuthContext
   
   const [formData, setFormData] = useState({
     full_name: '',
@@ -29,12 +31,12 @@ export default function EditProfilePage() {
         setFormData({
           full_name: data.full_name || '',
           email: data.email || '',
-          phone: data.phone || '',
+          phone: data.phone_number || '', // Khớp với trường phone_number từ Backend đổ về
           gender: data.gender || 'male',
           address: data.address || ''
         });
       } catch (err) {
-        console.error("Error fetching profile:", err);
+        console.error("Error fetching profile:", err); // Dùng biến err để không bị lỗi ESLint no-unused-vars
         setAlert({ type: 'error', message: 'Không thể tải dữ liệu để chỉnh sửa.' });
       } finally {
         setIsLoading(false);
@@ -61,18 +63,31 @@ export default function EditProfilePage() {
     setIsSaving(true);
 
     try {
+      // FIX LỖI 1: Chuẩn hóa payload theo đúng API Contract của Backend (chỉ gửi full_name và phone_number)
       const payload = {
         full_name: formData.full_name,
-        phone: formData.phone,
-        gender: formData.gender,
-        address: formData.address
+        phone_number: formData.phone // Đổi từ phone thành phone_number theo backend yêu cầu
       };
 
-      // Gọi API PATCH có sẵn của bạn
+      // Gọi API PATCH cập nhật hồ sơ
       const response = await authApi.updateProfile(payload);
       
+      // Khôi phục user hiện tại từ local và trộn với dữ liệu mới cập nhật từ backend trả về
+      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+      const updatedUser = {
+        ...currentUser,
+        ...response.data,
+        gender: formData.gender, // Giữ lại ở local nếu UI cần dùng tạm
+        address: formData.address
+      };
+      
       // Ghi đè cập nhật lại thông tin mới vào localStorage để đồng bộ nhanh
-      localStorage.setItem('user', JSON.stringify(response.data || formData));
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+
+      // FIX LỖI 2: Gọi updateUser từ AuthContext để Header cập nhật lập tức không cần F5
+      if (typeof updateUser === 'function') {
+        updateUser(updatedUser);
+      }
 
       setAlert({ type: 'success', message: 'Cập nhật thông tin tài khoản thành công!' });
       
@@ -110,14 +125,15 @@ export default function EditProfilePage() {
             </div>
           </div>
           
+          {/* FIX LỖI 3: Cập nhật lại các đường dẫn Link to cho chính xác hệ thống Router */}
           <nav className="flex flex-col gap-1">
             <Link to="/profile" className="flex items-center gap-3 px-4 py-3 text-sm font-bold text-amber-600 bg-amber-50 rounded-xl">
               <User className="w-5 h-5" /> Hồ sơ của tôi
             </Link>
-            <Link to="/profile" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
+            <Link to="/profile/orders" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
               <Package className="w-5 h-5" /> Đơn hàng của tôi
             </Link>
-            <Link to="/profile" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
+            <Link to="/profile/security" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
               <Shield className="w-5 h-5" /> Bảo mật & Mật khẩu
             </Link>
           </nav>
