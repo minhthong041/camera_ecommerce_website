@@ -93,6 +93,14 @@ class ProductSerializer(serializers.ModelSerializer):
     brand = BrandSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
     items = ProductItemSerializer(many=True, read_only=True)
+    min_price = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        read_only=True,
+        allow_null=True,
+    )
+    total_stock = serializers.IntegerField(read_only=True, default=0)
+    total_sold = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = Product
@@ -104,6 +112,9 @@ class ProductSerializer(serializers.ModelSerializer):
             "description",
             "tech_specs",
             "is_active",
+            "min_price",
+            "total_stock",
+            "total_sold",
             "items",
         )
 
