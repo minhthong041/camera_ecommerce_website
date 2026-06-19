@@ -2,7 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { User, Package, Shield, Save, X, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import authApi from "../api/authApi";
-import { AuthContext } from '../context/AuthContext'; // Đảm bảo đường dẫn này đúng với cấu trúc dự án của bạn
+import { AuthContext } from '../context/AuthContext'; 
 
 export default function EditProfilePage() {
   const navigate = useNavigate();
@@ -63,7 +63,7 @@ export default function EditProfilePage() {
     setIsSaving(true);
 
     try {
-      // FIX LỖI 1: Chuẩn hóa payload theo đúng API Contract của Backend (chỉ gửi full_name và phone_number)
+     
       const payload = {
         full_name: formData.full_name,
         phone_number: formData.phone // Đổi từ phone thành phone_number theo backend yêu cầu
@@ -84,7 +84,7 @@ export default function EditProfilePage() {
       // Ghi đè cập nhật lại thông tin mới vào localStorage để đồng bộ nhanh
       localStorage.setItem('user', JSON.stringify(updatedUser));
 
-      // FIX LỖI 2: Gọi updateUser từ AuthContext để Header cập nhật lập tức không cần F5
+     
       if (typeof updateUser === 'function') {
         updateUser(updatedUser);
       }
@@ -125,7 +125,7 @@ export default function EditProfilePage() {
             </div>
           </div>
           
-          {/* FIX LỖI 3: Cập nhật lại các đường dẫn Link to cho chính xác hệ thống Router */}
+          
           <nav className="flex flex-col gap-1">
             <Link to="/profile" className="flex items-center gap-3 px-4 py-3 text-sm font-bold text-amber-600 bg-amber-50 rounded-xl">
               <User className="w-5 h-5" /> Hồ sơ của tôi
