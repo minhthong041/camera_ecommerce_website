@@ -1,13 +1,16 @@
+from collections import defaultdict
 from decimal import Decimal
 from uuid import uuid4
 
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.viewsets import ReadOnlyModelViewSet
 
 from cart.models import CartItem, ShoppingCart
 from catalog.models import ProductItem
@@ -15,10 +18,66 @@ from locations.models import Address
 from promotions.models import Promotion
 
 from .models import Order, OrderLine, OrderStatus, ShippingMethod
-from .serializers import CheckoutSerializer, OrderSerializer
+from .serializers import (
+    CheckoutSerializer,
+    OrderDetailSerializer,
+    OrderSerializer,
+    OrderStatusUpdateSerializer,
+)
 
 
 MONEY_QUANTIZER = Decimal("0.01")
+RESTOCKED_ORDER_STATUSES = {"cancelled", "refunded"}
+
+
+def get_configured_order_status(status_name):
+    order_status = OrderStatus.objects.filter(name__iexact=status_name).first()
+    if order_status is None:
+        raise ValidationError(
+            {"status": f"Order status '{status_name}' is not configured."}
+        )
+    return order_status
+
+
+def restore_order_stock(order):
+    quantities_by_product_item = defaultdict(int)
+    for product_item_id, quantity in order.lines.values_list(
+        "product_item_id",
+        "quantity",
+    ):
+        quantities_by_product_item[product_item_id] += quantity
+
+    if not quantities_by_product_item:
+        return
+
+    product_items = list(
+        ProductItem.objects.select_for_update()
+        .filter(pk__in=quantities_by_product_item)
+        .order_by("pk")
+    )
+    if len(product_items) != len(quantities_by_product_item):
+        raise ValidationError(
+            {"order_lines": "One or more product items no longer exist."}
+        )
+
+    for product_item in product_items:
+        product_item.qty_in_stock += quantities_by_product_item[product_item.pk]
+
+    ProductItem.objects.bulk_update(product_items, ["qty_in_stock"])
+
+
+def optimized_order_queryset():
+    return (
+        Order.objects.select_related(
+            "user",
+            "status",
+            "shipping_method",
+            "shipping_address",
+            "promotion",
+        )
+        .prefetch_related("lines__product_item__product")
+        .order_by("-created_at", "-id")
+    )
 
 
 class CheckoutAPIView(APIView):
@@ -262,3 +321,107 @@ class CheckoutAPIView(APIView):
                 return order_code
 
         raise ValidationError({"order_code": "Could not generate a unique order code."})
+
+
+class CustomerOrderViewSet(ReadOnlyModelViewSet):
+    serializer_class = OrderDetailSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        return optimized_order_queryset().filter(user=self.request.user)
+
+    @action(detail=True, methods=("post",), url_path="cancel")
+    def cancel(self, request, pk=None):
+        with transaction.atomic():
+            order = (
+                Order.objects.select_for_update()
+                .select_related("status")
+                .filter(pk=pk, user=request.user)
+                .first()
+            )
+            if order is None:
+                raise NotFound("Order does not exist.")
+
+            current_status = order.status.name.strip().lower()
+            if current_status not in {"pending", "confirmed"}:
+                raise ValidationError(
+                    {
+                        "status": (
+                            "Only pending or confirmed orders can be cancelled. "
+                            f"Current status is '{current_status}'."
+                        )
+                    }
+                )
+
+            cancelled_status = get_configured_order_status("cancelled")
+            restore_order_stock(order)
+            order.status = cancelled_status
+            order.save(update_fields=("status",))
+
+            order = self.get_queryset().get(pk=order.pk)
+            return Response(self.get_serializer(order).data, status=status.HTTP_200_OK)
+
+
+class AdminOrderViewSet(ReadOnlyModelViewSet):
+    serializer_class = OrderDetailSerializer
+    permission_classes = (IsAdminUser,)
+
+    def get_queryset(self):
+        queryset = optimized_order_queryset()
+        status_name = self.request.query_params.get("status", "").strip()
+        search_term = self.request.query_params.get("search", "").strip()
+
+        if status_name:
+            queryset = queryset.filter(status__name__iexact=status_name)
+        if search_term:
+            queryset = queryset.filter(order_code__icontains=search_term)
+
+        return queryset
+
+    @action(detail=True, methods=("patch",), url_path="status")
+    def update_status(self, request, pk=None):
+        serializer = OrderStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_status_name = serializer.validated_data["status"]
+
+        with transaction.atomic():
+            order = (
+                Order.objects.select_for_update()
+                .select_related("status")
+                .filter(pk=pk)
+                .first()
+            )
+            if order is None:
+                raise NotFound("Order does not exist.")
+
+            current_status_name = order.status.name.strip().lower()
+            if current_status_name == new_status_name:
+                order = self.get_queryset().get(pk=order.pk)
+                return Response(
+                    self.get_serializer(order).data,
+                    status=status.HTTP_200_OK,
+                )
+
+            if current_status_name in RESTOCKED_ORDER_STATUSES:
+                raise ValidationError(
+                    {
+                        "status": (
+                            f"An order in '{current_status_name}' status cannot "
+                            "be moved to another status because its stock has "
+                            "already been restored."
+                        )
+                    }
+                )
+
+            new_status = get_configured_order_status(new_status_name)
+            if new_status_name in RESTOCKED_ORDER_STATUSES:
+                restore_order_stock(order)
+
+            order.status = new_status
+            order.save(update_fields=("status",))
+
+            order = self.get_queryset().get(pk=order.pk)
+            return Response(
+                self.get_serializer(order).data,
+                status=status.HTTP_200_OK,
+            )
