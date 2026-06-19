@@ -11,6 +11,10 @@ import ProductDetailPage from './pages/ProductDetailPage';
 import ProductListPage from './pages/ProductListPage';
 import RegisterPage from './pages/RegisterPage';
 
+// Import các trang quản lý tài khoản mới của bồ
+import ProfilePage from "./pages/ProfilePage";
+import EditProfilePage from "./pages/EditProfilePage";
+
 export default function App() {
   return (
     <AuthProvider>
@@ -19,6 +23,8 @@ export default function App() {
           <Route index element={<HomePage />} />
           <Route path="products" element={<ProductListPage />} />
           <Route path="products/:id" element={<ProductDetailPage />} />
+          
+          {/* Các Route cần đăng nhập mới vào được */}
           <Route
             path="cart"
             element={
@@ -32,6 +38,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <CheckoutPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="profile/edit"
+            element={
+              <ProtectedRoute>
+                <EditProfilePage />
               </ProtectedRoute>
             }
           />
