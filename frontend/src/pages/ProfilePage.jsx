@@ -14,7 +14,7 @@ export default function ProfilePage() {
         setIsLoading(true);
         setError(null);
         
-        // Gọi trực tiếp API getProfile có sẵn của bạn
+        // Gọi trực tiếp API getProfile có sẵn c
         const response = await authApi.getProfile();
         const data = response.data; // Lấy dữ liệu từ Axios response object
         
