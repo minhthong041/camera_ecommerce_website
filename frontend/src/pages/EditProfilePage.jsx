@@ -34,6 +34,7 @@ export default function EditProfilePage() {
           address: data.address || ''
         });
       } catch (err) {
+        console.error("Error fetching profile:", err);
         setAlert({ type: 'error', message: 'Không thể tải dữ liệu để chỉnh sửa.' });
       } finally {
         setIsLoading(false);
