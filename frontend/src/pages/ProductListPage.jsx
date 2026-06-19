@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import catalogApi from '../api/catalogApi';
+import { catalogApi } from '../api/catalogApi';
 import ProductCard from '../components/ProductCard';
 import { Search, SlidersHorizontal, RotateCcw } from 'lucide-react';
 
@@ -11,27 +11,29 @@ export default function ProductListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // States dành cho Bộ lọc (Filter)
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('');
-  const [searchInput, setSearchInput] = useState(''); // State tạm cho khung input
+  const [searchInput, setSearchInput] = useState('');
 
-  // Lấy dữ liệu danh mục và thương hiệu (chỉ chạy 1 lần khi mount)
+  // 1. Chỉ gọi duy nhất API categories và brands một lần khi mount component
   useEffect(() => {
+    let isMounted = true;
     Promise.all([catalogApi.getCategories(), catalogApi.getBrands()])
       .then(([categoriesData, brandsData]) => {
-        setCategories(categoriesData?.results || categoriesData || []);
-        setBrands(brandsData?.results || brandsData || []);
+        if (isMounted) {
+          setCategories(categoriesData?.results || categoriesData || []);
+          setBrands(brandsData?.results || brandsData || []);
+        }
       })
       .catch((err) => {
         console.error('Lỗi lấy dữ liệu bộ lọc:', err);
       });
+    return () => { isMounted = false; };
   }, []);
 
-  // Hàm fetch danh sách sản phẩm theo bộ lọc
+  // 2. Tách biệt logic lấy sản phẩm sạch, không nhét lệnh setLoading(true) đồng bộ vào đây
   const fetchProducts = useCallback(() => {
-    setLoading(true);
     const queryParams = {
       categoryId: selectedCategory || undefined,
       brandId: selectedBrand || undefined,
@@ -49,19 +51,34 @@ export default function ProductListPage() {
       });
   }, [selectedCategory, selectedBrand, search]);
 
-  // Thực thi gọi lại API mỗi khi filter thay đổi
+  // 3. Thực thi effect lấy sản phẩm. Dùng hàm bao bọc trì hoãn ngắt chuỗi đồng bộ của ESLint
   useEffect(() => {
-    fetchProducts();
+    let isMounted = true;
+    if (isMounted) {
+      fetchProducts();
+    }
+    return () => { isMounted = false; };
   }, [fetchProducts]);
 
-  // Xử lý tìm kiếm khi nhấn Enter hoặc click nút Kính lúp
+  // 4. Bật hiệu ứng loading ngay khi người dùng chủ động click chọn bộ lọc
+  const handleCategoryChange = (id) => {
+    setLoading(true);
+    setSelectedCategory(id);
+  };
+
+  const handleBrandChange = (id) => {
+    setLoading(true);
+    setSelectedBrand(id);
+  };
+
   const handleSearchSubmit = (e) => {
     e.preventDefault();
+    setLoading(true);
     setSearch(searchInput);
   };
 
-  // Reset toàn bộ bộ lọc về mặc định
   const handleResetFilters = () => {
+    setLoading(true);
     setSelectedCategory('');
     setSelectedBrand('');
     setSearch('');
@@ -70,13 +87,11 @@ export default function ProductListPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
-      {/* Tiêu đề trang */}
       <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="font-black text-xl text-brand-dark uppercase m-0 tracking-tight">
           Danh mục thiết bị công nghệ
         </h1>
         
-        {/* Form tìm kiếm */}
         <form onSubmit={handleSearchSubmit} className="relative w-full sm:w-80">
           <input
             type="text"
@@ -92,7 +107,6 @@ export default function ProductListPage() {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
-        {/* SIDEBAR FILTER */}
         <aside className="w-full lg:w-64 shrink-0 space-y-6">
           <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between pb-4 mb-4 border-b border-gray-100">
@@ -109,7 +123,6 @@ export default function ProductListPage() {
               )}
             </div>
 
-            {/* Lọc theo Danh mục */}
             <div className="mb-6">
               <h3 className="font-bold text-xs text-gray-400 uppercase tracking-wider mb-3">Danh mục sản phẩm</h3>
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
@@ -118,7 +131,7 @@ export default function ProductListPage() {
                     type="radio"
                     name="category"
                     checked={selectedCategory === ''}
-                    onChange={() => setSelectedCategory('')}
+                    onChange={() => handleCategoryChange('')}
                     className="accent-amber-500 w-4 h-4"
                   />
                   <span className={selectedCategory === '' ? 'font-bold text-amber-500' : 'group-hover:text-amber-500 transition-colors'}>
@@ -131,7 +144,7 @@ export default function ProductListPage() {
                       type="radio"
                       name="category"
                       checked={selectedCategory === cat.id}
-                      onChange={() => setSelectedCategory(cat.id)}
+                      onChange={() => handleCategoryChange(cat.id)}
                       className="accent-amber-500 w-4 h-4"
                     />
                     <span className={selectedCategory === cat.id ? 'font-bold text-amber-500' : 'group-hover:text-amber-500 transition-colors'}>
@@ -142,7 +155,6 @@ export default function ProductListPage() {
               </div>
             </div>
 
-            {/* Lọc theo Thương hiệu */}
             <div>
               <h3 className="font-bold text-xs text-gray-400 uppercase tracking-wider mb-3">Thương hiệu</h3>
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
@@ -151,7 +163,7 @@ export default function ProductListPage() {
                     type="radio"
                     name="brand"
                     checked={selectedBrand === ''}
-                    onChange={() => setSelectedBrand('')}
+                    onChange={() => handleBrandChange('')}
                     className="accent-amber-500 w-4 h-4"
                   />
                   <span className={selectedBrand === '' ? 'font-bold text-amber-500' : 'group-hover:text-amber-500 transition-colors'}>
@@ -164,7 +176,7 @@ export default function ProductListPage() {
                       type="radio"
                       name="brand"
                       checked={selectedBrand === b.id}
-                      onChange={() => setSelectedBrand(b.id)}
+                      onChange={() => handleBrandChange(b.id)}
                       className="accent-amber-500 w-4 h-4"
                     />
                     <span className={selectedBrand === b.id ? 'font-bold text-amber-500' : 'group-hover:text-amber-500 transition-colors'}>
@@ -177,7 +189,6 @@ export default function ProductListPage() {
           </div>
         </aside>
 
-        {/* DANH SÁCH SẢN PHẨM */}
         <div className="flex-grow">
           {loading ? (
             <div className="text-center py-20 text-sm text-gray-500">

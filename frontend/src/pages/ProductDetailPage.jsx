@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import catalogApi from '../api/catalogApi';
+import { catalogApi } from '../api/catalogApi';
 import { ShieldCheck, Truck, RefreshCw, Minus, Plus, ShoppingCart, ChevronRight, Home } from 'lucide-react';
 
 export default function ProductDetailPage() {
@@ -10,18 +10,33 @@ export default function ProductDetailPage() {
   const [error, setError] = useState(null);
   const [quantity, setQuantity] = useState(1);
 
-  useEffect(() => {
-    setLoading(true);
-    catalogApi.getProduct(id)
-      .then((data) => {
+useEffect(() => {
+  let isMounted = true;
+
+  catalogApi
+    .getProduct(id)
+    .then((data) => {
+      if (isMounted) {
         setProduct(data);
+        setError(null);
         setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message || 'Không thể lấy thông tin chi tiết sản phẩm.');
+      }
+    })
+    .catch((err) => {
+      if (isMounted) {
+        setError(
+          err.message || 'Không thể lấy thông tin chi tiết sản phẩm.'
+        );
+        setProduct(null);
         setLoading(false);
-      });
-  }, [id]);
+      }
+    });
+
+  return () => {
+    isMounted = false;
+  };
+}, [id]);
+
 
   const formatVND = (price) => {
     if (!price) return '0 ₫';
@@ -42,7 +57,6 @@ export default function ProductDetailPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl">
-      {/* Breadcrumb điều hướng */}
       <nav className="flex items-center gap-2 text-xs text-gray-500 mb-6 bg-white px-4 py-2.5 rounded-lg border border-gray-100 shadow-sm">
         <Link to="/" className="hover:text-amber-500 flex items-center gap-1">
           <Home className="w-3.5 h-3.5" /> Trang chủ
@@ -53,10 +67,7 @@ export default function ProductDetailPage() {
         <span className="text-gray-800 font-medium truncate max-w-[200px] sm:max-w-xs">{product.name}</span>
       </nav>
 
-      {/* Khối thông tin chính của Sản phẩm */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 bg-white p-4 sm:p-8 rounded-2xl border border-gray-100 shadow-sm">
-        
-        {/* Khối Ảnh Bên Trái (Cột 5/12) */}
         <div className="lg:col-span-5 flex flex-col gap-4">
           <div className="relative aspect-square rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center p-4 group overflow-hidden">
             {product.discount > 0 && (
@@ -72,7 +83,6 @@ export default function ProductDetailPage() {
           </div>
         </div>
 
-        {/* Khối Chi Tiết Giá & Mua Hàng Bên Phải (Cột 7/12) */}
         <div className="lg:col-span-7 flex flex-col justify-between">
           <div>
             <span className="text-xs bg-amber-500/10 text-amber-600 font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">
@@ -97,7 +107,6 @@ export default function ProductDetailPage() {
               </div>
             </div>
 
-            {/* Vùng hiển thị giá tiền */}
             <div className="bg-gray-50 p-4 rounded-xl mt-4 flex items-baseline flex-wrap gap-3">
               <span className="text-red-500 font-black text-2xl sm:text-3xl">
                 {formatVND(product.price)}
@@ -109,7 +118,6 @@ export default function ProductDetailPage() {
               )}
             </div>
 
-            {/* Mô tả tóm tắt ngắn gọn */}
             <div className="mt-5">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Mô tả sản phẩm</h3>
               <p className="text-sm text-gray-600 leading-relaxed">
@@ -118,7 +126,6 @@ export default function ProductDetailPage() {
             </div>
           </div>
 
-          {/* Vùng Tương tác: Số lượng & Nút Thêm vào giỏ */}
           <div className="mt-8 pt-6 border-t border-gray-100 space-y-4">
             <div className="flex items-center gap-4">
               <span className="text-sm font-bold text-gray-700">Số lượng:</span>
@@ -151,7 +158,6 @@ export default function ProductDetailPage() {
             </div>
           </div>
 
-          {/* Cam kết cửa hàng tiện ích dưới nút mua */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6 pt-6 border-t border-gray-100 text-[11px] text-gray-500">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
@@ -166,7 +172,6 @@ export default function ProductDetailPage() {
               <span>Đổi trả miễn phí trong 7 ngày</span>
             </div>
           </div>
-
         </div>
       </div>
     </div>
