@@ -28,23 +28,23 @@ const RegisterPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     if (formData.password !== formData.confirmPassword) {
-      setError('Mật khẩu xác nhận không khớp!');
+      setError("Mật khẩu xác nhận không khớp!");
       return;
     }
 
     setIsLoading(true);
-    
+
     // ĐÃ SỬA: Map trường confirmPassword thành password_confirm theo chuẩn backend
     const registerData = {
       ...formData,
-      password_confirm: formData.confirmPassword 
+      password_confirm: formData.confirmPassword,
     };
     // Xóa trường cũ dư thừa đi
-    delete registerData.confirmPassword; 
-    
+    delete registerData.confirmPassword;
+
     const result = await register(registerData);
     if (!result.success) {
       setError(result.message);
@@ -77,7 +77,6 @@ const RegisterPage = () => {
             <input
               type="text"
               name="username"
-              required
               value={formData.username}
               onChange={handleChange}
               className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-orange-500 focus:border-orange-500"
@@ -122,7 +121,6 @@ const RegisterPage = () => {
               <input
                 type="tel"
                 name="phone_number"
-                required
                 value={formData.phone_number}
                 onChange={handleChange}
                 className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-orange-500 focus:border-orange-500"
@@ -139,7 +137,6 @@ const RegisterPage = () => {
             <input
               type="date"
               name="dob"
-              required
               value={formData.dob}
               onChange={handleChange}
               className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-orange-500 focus:border-orange-500"
