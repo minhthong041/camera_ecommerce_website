@@ -59,6 +59,7 @@ apiClient.interceptors.response.use(
           return apiClient(originalRequest);
         }
       } catch (refreshError) {
+        console.error("Lỗi khi refresh token:", refreshError); // Thêm dòng này
         // Nếu refresh token cũng hết hạn -> Đá văng ra màn hình đăng nhập
         localStorage.removeItem('token');
         localStorage.removeItem('refresh');
