@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "corsheaders",
 
     "core",
+    "admin_dashboard",
     "accounts",
     "locations",
     "catalog",
@@ -166,7 +167,7 @@ AUTH_USER_MODEL = "accounts.User"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "admin_dashboard.authentication.RoleAwareJWTAuthentication",
     ),
 }
 
