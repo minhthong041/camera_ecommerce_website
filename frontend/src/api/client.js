@@ -34,6 +34,12 @@ apiClient.interceptors.request.use(
 // Khai báo biến giữ Promise để xử lý concurrent refresh requests
 let refreshTokenPromise = null;
 
+const clearStoredSession = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('refresh')
+  localStorage.removeItem('user')
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -44,10 +50,11 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
 
       const refreshToken = localStorage.getItem('refresh');
-      
+
       // Nếu không có refresh token thì văng ra login luôn
       if (!refreshToken) {
-        window.location.href = '/login';
+        clearStoredSession();
+        window.location.replace('/login');
         return Promise.reject(new ApiError('Phiên đăng nhập đã hết hạn', { status: 401 }));
       }
 
@@ -57,7 +64,7 @@ apiClient.interceptors.response.use(
           .then(res => {
             const newAccess = res.data.access;
             const newRefresh = res.data.refresh; // Lấy cả refresh token mới
-            
+
             localStorage.setItem('token', newAccess);
             if (newRefresh) {
               localStorage.setItem('refresh', newRefresh); // Lưu refresh token mới theo cơ chế Rotation
@@ -65,15 +72,13 @@ apiClient.interceptors.response.use(
             return newAccess;
           })
           .catch(err => {
-            localStorage.removeItem('token');
-            localStorage.removeItem('refresh');
-            localStorage.removeItem('user');
-            window.location.href = '/login';
+            clearStoredSession();
+            window.location.replace('/login');
             return Promise.reject(err);
           })
           .finally(() => {
             // Xin xong (hoặc thất bại) thì xóa Promise đi để lần sau còn chạy lại được
-            refreshTokenPromise = null; 
+            refreshTokenPromise = null;
           });
       }
 
@@ -81,6 +86,14 @@ apiClient.interceptors.response.use(
         // TẤT CẢ CÁC REQUEST 401 SẼ ĐỨNG ĐỢI Ở ĐÂY cho đến khi Token mới được trả về
         const newAccess = await refreshTokenPromise;
         originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+
+        // Refresh rotation đã blacklist token cũ, nên logout phải gửi token mới.
+        if (originalRequest.url?.endsWith('/auth/logout/')) {
+          originalRequest.data = JSON.stringify({
+            refresh: localStorage.getItem('refresh'),
+          });
+        }
+
         return apiClient(originalRequest);
       } catch {
         return Promise.reject(new ApiError('Phiên đăng nhập đã hết hạn', { status: 401 }));
