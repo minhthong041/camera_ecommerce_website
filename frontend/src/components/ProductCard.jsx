@@ -1,4 +1,5 @@
 import { Eye, ShoppingCart } from 'lucide-react';
+import { Link } from 'react-router-dom'; // 1. Import thêm Link từ react-router-dom
 
 export default function ProductCard({ product }) {
   const formatVND = (price) => price.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
@@ -19,9 +20,10 @@ export default function ProductCard({ product }) {
           loading="lazy"
         />
         <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2">
-          <button className="bg-white p-2.5 rounded-full text-gray-900 shadow-md hover:bg-amber-500 hover:text-white transition-all transform translate-y-2 group-hover:translate-y-0 duration-300">
+          {/* 2. Bọc icon Eye bằng thẻ Link để nhấn vào ảnh cũng chuyển trang */}
+          <Link to={`/products/${product.id}`} className="bg-white p-2.5 rounded-full text-gray-900 shadow-md hover:bg-amber-500 hover:text-white transition-all transform translate-y-2 group-hover:translate-y-0 duration-300">
             <Eye className="w-4 h-4" />
-          </button>
+          </Link>
           <button className="bg-white p-2.5 rounded-full text-gray-900 shadow-md hover:bg-gray-900 hover:text-white transition-all transform translate-y-2 group-hover:translate-y-0 duration-300 delay-75">
             <ShoppingCart className="w-4 h-4" />
           </button>
@@ -31,9 +33,12 @@ export default function ProductCard({ product }) {
       <div className="flex-grow flex flex-col justify-between">
         <div>
           <span className="text-[10px] text-gray-400 uppercase font-bold tracking-widest block">{product.brand}</span>
-          <h3 className="font-bold text-sm text-gray-800 line-clamp-2 mt-1 min-h-[40px] group-hover:text-amber-500 transition-colors">
-            {product.name}
-          </h3>
+          {/* 3. Cho phép nhấn vào tiêu đề để xem chi tiết */}
+          <Link to={`/products/${product.id}`}>
+            <h3 className="font-bold text-sm text-gray-800 line-clamp-2 mt-1 min-h-[40px] group-hover:text-amber-500 transition-colors">
+              {product.name}
+            </h3>
+          </Link>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="text-gray-400">Tình trạng:</span>
             <span className={`font-semibold ${product.status === 'Còn hàng' ? 'text-green-600' : 'text-amber-600'}`}>
@@ -49,9 +54,14 @@ export default function ProductCard({ product }) {
               <span className="text-xs text-gray-400 line-through">{formatVND(product.oldPrice)}</span>
             )}
           </div>
-          <button className="w-full mt-3 bg-gray-50 border border-gray-100 text-gray-800 py-2 rounded-lg text-xs font-bold hover:bg-gray-900 hover:text-white hover:border-gray-900 transition-all">
+          
+          {/* 4. Thay đổi từ <button> thành <Link> để kích hoạt chuyển hướng */}
+          <Link 
+            to={`/products/${product.id}`}
+            className="w-full mt-3 block text-center bg-gray-50 border border-gray-100 text-gray-800 py-2 rounded-lg text-xs font-bold hover:bg-gray-900 hover:text-white hover:border-gray-900 transition-all"
+          >
             Xem chi tiết
-          </button>
+          </Link>
         </div>
       </div>
     </div>
