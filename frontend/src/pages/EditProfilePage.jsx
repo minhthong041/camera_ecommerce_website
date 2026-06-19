@@ -1,21 +1,32 @@
 import { useState, useEffect, useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, Package, Shield, Save, X, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { User, Save, X, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import authApi from "../api/authApi";
-import { AuthContext } from '../context/AuthContext'; 
+import { AuthContext } from '../context/AuthContext';
+
+const getProfileErrorMessage = (error) => {
+  if (error.data && typeof error.data === "object") {
+    const message = Object.values(error.data)
+      .flat()
+      .find((value) => typeof value === "string");
+    if (message) return message;
+  }
+
+  return error.message || 'Lỗi trong quá trình cập nhật. Vui lòng kiểm tra lại.';
+};
 
 export default function EditProfilePage() {
   const navigate = useNavigate();
-  const { updateUser } = useContext(AuthContext); // Lấy hàm đồng bộ state từ AuthContext
-  
+  const { updateUser } = useContext(AuthContext);
+
   const [formData, setFormData] = useState({
+    username: '',
     full_name: '',
     email: '',
-    phone: '',
-    gender: 'male',
-    address: ''
+    phone_number: '',
+    dob: ''
   });
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [alert, setAlert] = useState({ type: '', message: '' });
@@ -27,16 +38,16 @@ export default function EditProfilePage() {
         setIsLoading(true);
         const response = await authApi.getProfile();
         const data = response.data;
-        
+
         setFormData({
+          username: data.username || '',
           full_name: data.full_name || '',
           email: data.email || '',
-          phone: data.phone_number || '', 
-          gender: data.gender || 'male',
-          address: data.address || ''
+          phone_number: data.phone_number || '',
+          dob: data.dob || ''
         });
       } catch (err) {
-        console.error("Error fetching profile:", err); 
+        console.error("Error fetching profile:", err);
         setAlert({ type: 'error', message: 'Không thể tải dữ liệu để chỉnh sửa.' });
       } finally {
         setIsLoading(false);
@@ -48,12 +59,8 @@ export default function EditProfilePage() {
 
   // Xử lý thay đổi dữ liệu các trường Input
   const handleChange = (e) => {
-    const { id, name, value, type } = e.target;
-    if (type === 'radio') {
-      setFormData((prev) => ({ ...prev, [name]: value }));
-    } else {
-      setFormData((prev) => ({ ...prev, [id]: value }));
-    }
+    const { id, value } = e.target;
+    setFormData((prev) => ({ ...prev, [id]: value }));
   };
 
   // Gửi thông tin thay đổi lên backend qua API PATCH
@@ -63,54 +70,42 @@ export default function EditProfilePage() {
     setIsSaving(true);
 
     try {
-     
+
       const payload = {
+        username: formData.username,
         full_name: formData.full_name,
-        phone_number: formData.phone // Đổi từ phone thành phone_number theo backend yêu cầu
+        email: formData.email,
+        phone_number: formData.phone_number,
+        dob: formData.dob || null
       };
 
       // Gọi API PATCH cập nhật hồ sơ
       const response = await authApi.updateProfile(payload);
-      
-      // Khôi phục user hiện tại từ local và trộn với dữ liệu mới cập nhật từ backend trả về
-      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-      const updatedUser = {
-        ...currentUser,
-        ...response.data,
-        gender: formData.gender, // Giữ lại ở local nếu UI cần dùng tạm
-        address: formData.address
-      };
-      
-      // Ghi đè cập nhật lại thông tin mới vào localStorage để đồng bộ nhanh
-      localStorage.setItem('user', JSON.stringify(updatedUser));
 
-     
-      if (typeof updateUser === 'function') {
-        updateUser(updatedUser);
-      }
+      updateUser(response.data);
 
       setAlert({ type: 'success', message: 'Cập nhật thông tin tài khoản thành công!' });
-      
+
       // Chuyển hướng mượt mà về trang Profile sau 1.5 giây để xem thay đổi
       setTimeout(() => {
         navigate('/profile');
       }, 1500);
 
     } catch (err) {
-      setAlert({ type: 'error', message: err.message || 'Lỗi trong quá trình cập nhật. Vui lòng kiểm tra lại.' });
+      setAlert({ type: 'error', message: getProfileErrorMessage(err) });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const avatarText = formData.full_name 
-    ? formData.full_name.split(' ').pop().charAt(0).toUpperCase() 
+  const avatarText = formData.full_name
+    ? formData.full_name.split(' ').pop().charAt(0).toUpperCase()
     : 'U';
 
   return (
     <div className="container px-4 py-8 mx-auto max-w-7xl">
       <div className="flex flex-col gap-8 md:flex-row">
-        
+
         {/* Sidebar Menu */}
         <div className="w-full shrink-0 md:w-64">
           <div className="flex items-center gap-3 p-4 mb-6 border border-gray-100 shadow-sm bg-white rounded-2xl">
@@ -124,17 +119,11 @@ export default function EditProfilePage() {
               <p className="text-xs text-gray-500">Chỉnh sửa hồ sơ</p>
             </div>
           </div>
-          
-          
+
+
           <nav className="flex flex-col gap-1">
             <Link to="/profile" className="flex items-center gap-3 px-4 py-3 text-sm font-bold text-amber-600 bg-amber-50 rounded-xl">
               <User className="w-5 h-5" /> Hồ sơ của tôi
-            </Link>
-            <Link to="/profile/orders" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
-              <Package className="w-5 h-5" /> Đơn hàng của tôi
-            </Link>
-            <Link to="/profile/security" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
-              <Shield className="w-5 h-5" /> Bảo mật & Mật khẩu
             </Link>
           </nav>
         </div>
@@ -163,13 +152,13 @@ export default function EditProfilePage() {
             ) : (
               <form onSubmit={handleSubmit} className="pt-6 border-t border-gray-100">
                 <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                  
+
                   {/* Họ và tên */}
                   <div className="flex flex-col gap-2">
                     <label htmlFor="full_name" className="text-xs font-bold text-gray-700 uppercase">Họ và tên</label>
-                    <input 
-                      type="text" 
-                      id="full_name" 
+                    <input
+                      type="text"
+                      id="full_name"
                       value={formData.full_name}
                       onChange={handleChange}
                       required
@@ -177,53 +166,49 @@ export default function EditProfilePage() {
                     />
                   </div>
 
-                  {/* Email (Bị khóa mặc định vì không cho sửa đổi trực tiếp) */}
+                  {/* Tên đăng nhập */}
                   <div className="flex flex-col gap-2">
-                    <label htmlFor="email" className="text-xs font-bold text-gray-400 uppercase">Địa chỉ Email</label>
-                    <input 
-                      type="email" 
-                      id="email" 
-                      value={formData.email}
-                      disabled
-                      className="w-full bg-gray-100 border border-gray-200 px-4 py-2.5 text-gray-400 rounded-lg text-sm cursor-not-allowed"
-                    />
-                  </div>
-
-                  {/* Số điện thoại */}
-                  <div className="flex flex-col gap-2">
-                    <label htmlFor="phone" className="text-xs font-bold text-gray-700 uppercase">Số điện thoại</label>
-                    <input 
-                      type="tel" 
-                      id="phone" 
-                      value={formData.phone}
+                    <label htmlFor="username" className="text-xs font-bold text-gray-700 uppercase">Tên đăng nhập</label>
+                    <input
+                      type="text"
+                      id="username"
+                      value={formData.username}
                       onChange={handleChange}
                       className="w-full bg-gray-50 border border-gray-200 px-4 py-2.5 rounded-lg text-sm focus:outline-none focus:border-amber-500 focus:bg-white transition-all"
                     />
                   </div>
 
-                  {/* Giới tính */}
+                  {/* Email */}
                   <div className="flex flex-col gap-2">
-                    <label className="text-xs font-bold text-gray-700 uppercase">Giới tính</label>
-                    <div className="flex items-center gap-6 h-full mt-1">
-                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                        <input type="radio" name="gender" value="male" checked={formData.gender === 'male' || formData.gender === 'Nam'} onChange={handleChange} className="w-4 h-4 text-amber-500 focus:ring-amber-500" /> Nam
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                        <input type="radio" name="gender" value="female" checked={formData.gender === 'female' || formData.gender === 'Nữ'} onChange={handleChange} className="w-4 h-4 text-amber-500 focus:ring-amber-500" /> Nữ
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                        <input type="radio" name="gender" value="other" checked={formData.gender === 'other' || formData.gender === 'Khác'} onChange={handleChange} className="w-4 h-4 text-amber-500 focus:ring-amber-500" /> Khác
-                      </label>
-                    </div>
+                    <label htmlFor="email" className="text-xs font-bold text-gray-700 uppercase">Địa chỉ Email</label>
+                    <input
+                      type="email"
+                      id="email"
+                      value={formData.email}
+                      onChange={handleChange}
+                      className="w-full bg-gray-50 border border-gray-200 px-4 py-2.5 rounded-lg text-sm focus:outline-none focus:border-amber-500 focus:bg-white transition-all"
+                    />
                   </div>
 
-                  {/* Địa chỉ mặc định */}
-                  <div className="flex flex-col gap-2 md:col-span-2">
-                    <label htmlFor="address" className="text-xs font-bold text-gray-700 uppercase">Địa chỉ mặc định</label>
-                    <input 
-                      type="text" 
-                      id="address" 
-                      value={formData.address}
+                  {/* Số điện thoại */}
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="phone_number" className="text-xs font-bold text-gray-700 uppercase">Số điện thoại</label>
+                    <input
+                      type="tel"
+                      id="phone_number"
+                      value={formData.phone_number}
+                      onChange={handleChange}
+                      className="w-full bg-gray-50 border border-gray-200 px-4 py-2.5 rounded-lg text-sm focus:outline-none focus:border-amber-500 focus:bg-white transition-all"
+                    />
+                  </div>
+
+                  {/* Ngày sinh */}
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="dob" className="text-xs font-bold text-gray-700 uppercase">Ngày sinh</label>
+                    <input
+                      type="date"
+                      id="dob"
+                      value={formData.dob}
                       onChange={handleChange}
                       className="w-full bg-gray-50 border border-gray-200 px-4 py-2.5 rounded-lg text-sm focus:outline-none focus:border-amber-500 focus:bg-white transition-all"
                     />
@@ -236,8 +221,8 @@ export default function EditProfilePage() {
                   <Link to="/profile" className="flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition">
                     <X className="w-4 h-4" /> Hủy bỏ
                   </Link>
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     disabled={isSaving}
                     className="flex items-center gap-2 px-5 py-2.5 text-xs font-black text-gray-900 bg-amber-500 hover:bg-amber-400 rounded-xl transition shadow-md shadow-amber-500/20 disabled:opacity-70 disabled:cursor-not-allowed"
                   >

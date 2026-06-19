@@ -1,11 +1,31 @@
 import { Link, NavLink } from "react-router-dom";
 import { Search, ShoppingCart, User, Heart, Phone, LogOut } from "lucide-react";
-import { useContext } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { AuthContext } from "../context/AuthContext";
 
 export default function Header() {
   // Lấy thông tin trạng thái đăng nhập toàn cục từ AuthContext của hệ thống
   const { user, logout } = useContext(AuthContext);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef(null);
+
+  useEffect(() => {
+    const closeAccountMenu = (event) => {
+      if (!accountMenuRef.current?.contains(event.target)) {
+        setIsAccountMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setIsAccountMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeAccountMenu);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeAccountMenu);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
 
   return (
     <div className="sticky top-0 z-50 w-full tracking-tight bg-white border-b border-gray-100 shadow-sm">
@@ -28,7 +48,7 @@ export default function Header() {
       {/* Main Header */}
       <header className="bg-white">
         <div className="container flex items-center justify-between h-20 gap-6 px-4 mx-auto">
-          
+
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 shrink-0">
             <div className="text-2xl font-black tracking-tighter text-gray-900">
@@ -61,7 +81,7 @@ export default function Header() {
               <button className="relative p-1 text-gray-700 hover:text-amber-500">
                 <Heart className="w-5 h-5" />
               </button>
-              
+
               <Link to="/cart" className="relative p-1 text-gray-700 hover:text-amber-500">
                 <ShoppingCart className="w-5 h-5" />
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
@@ -71,26 +91,44 @@ export default function Header() {
 
               {/* Tích hợp đồng nhất trạng thái đăng nhập cùng Dropdown Menu */}
               {user ? (
-                <div className="relative p-1 group">
-                  <Link to="/profile" className="flex items-center gap-2 text-gray-700 transition hover:text-amber-500">
+                <div ref={accountMenuRef} className="relative p-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsAccountMenuOpen((isOpen) => !isOpen)}
+                    className="flex items-center gap-2 text-gray-700 transition hover:text-amber-500"
+                    aria-haspopup="menu"
+                    aria-expanded={isAccountMenuOpen}
+                    aria-label="Mở menu tài khoản"
+                  >
                     <User className="w-5 h-5" />
                     <div className="flex flex-col items-start hidden sm:flex max-w-[110px]">
                       <span className="text-[9px] text-gray-400 uppercase font-bold tracking-wider leading-none">Xin chào</span>
                       <span className="text-xs font-bold text-gray-900 truncate w-full mt-0.5">{user.full_name || user.username}</span>
                     </div>
-                  </Link>
-                  
-                  {/* Dropdown ẩn, tự động hiện khi đưa chuột vào vùng tài khoản */}
-                  <div className="absolute hidden group-hover:block group-focus-within:block focus-within:block right-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-lg">
+                  </button>
+
+                  <div
+                    className={`absolute right-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-lg ${isAccountMenuOpen ? "block" : "hidden"}`}
+                    role="menu"
+                  >
                     <div className="flex flex-col py-1.5 bg-white border border-gray-100 shadow-xl rounded-xl">
-                      <Link to="/profile" className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-amber-50 hover:text-amber-600 transition">
+                      <Link
+                        to="/profile"
+                        onClick={() => setIsAccountMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-amber-50 hover:text-amber-600 transition"
+                        role="menuitem"
+                      >
                         <User className="w-3.5 h-3.5" /> Hồ sơ của tôi
                       </Link>
                       <hr className="my-1 border-gray-100" />
                       <button
-                        onClick={logout}
+                        onClick={() => {
+                          setIsAccountMenuOpen(false);
+                          logout();
+                        }}
                         type="button"
                         className="flex items-center w-full gap-2 px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50 transition text-left"
+                        role="menuitem"
                       >
                         <LogOut className="w-3.5 h-3.5" /> Đăng xuất
                       </button>

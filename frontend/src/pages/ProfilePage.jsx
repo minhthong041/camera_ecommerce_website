@@ -1,10 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { User, MapPin, Phone, Mail, Edit, Package, Shield, Loader2, AlertCircle } from 'lucide-react';
+import { User, MapPin, Phone, Mail, Edit, Loader2, AlertCircle } from 'lucide-react';
+import addressApi from "../api/addressApi";
 import authApi from "../api/authApi";
+import { AuthContext } from "../context/AuthContext";
+
+const formatAddress = (address) => {
+  if (!address) return "Chưa cập nhật";
+
+  return [
+    address.address_line1,
+    address.address_line2,
+    address.ward?.name,
+    address.ward?.district?.name,
+    address.ward?.district?.city?.name,
+    address.ward?.district?.city?.province?.name,
+    address.ward?.district?.city?.province?.country?.name,
+    address.postal_code,
+  ]
+    .filter(Boolean)
+    .join(", ");
+};
 
 export default function ProfilePage() {
+  const { updateUser } = useContext(AuthContext);
   const [user, setUser] = useState(null);
+  const [defaultAddress, setDefaultAddress] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -13,14 +34,21 @@ export default function ProfilePage() {
       try {
         setIsLoading(true);
         setError(null);
-        
-        // Gọi trực tiếp API getProfile có sẵn c
-        const response = await authApi.getProfile();
-        const data = response.data; // Lấy dữ liệu từ Axios response object
-        
+        const [profileResponse, addressResponse] = await Promise.all([
+          authApi.getProfile(),
+          addressApi.getAddresses().catch(() => ({ data: [] })),
+        ]);
+        const data = profileResponse.data;
+        const rawAddressData = addressResponse.data;
+        const addresses = Array.isArray(rawAddressData)
+          ? rawAddressData
+          : rawAddressData?.results ?? [];
+
         setUser(data);
-        // Lưu ngược lại thông tin mới vào localStorage để header đồng bộ kịp thời
-        localStorage.setItem('user', JSON.stringify(data));
+        setDefaultAddress(
+          addresses.find((address) => address.is_default) ?? addresses[0] ?? null,
+        );
+        updateUser(data);
       } catch (err) {
         setError(err.message || 'Không thể tải thông tin hồ sơ cá nhân.');
       } finally {
@@ -29,17 +57,17 @@ export default function ProfilePage() {
     };
 
     fetchProfile();
-  }, []);
+  }, [updateUser]);
 
   // Lấy chữ cái cuối cùng của tên làm kí tự Avatar đại diện
-  const avatarText = user?.full_name 
-    ? user.full_name.split(' ').pop().charAt(0).toUpperCase() 
+  const avatarText = user?.full_name
+    ? user.full_name.split(' ').pop().charAt(0).toUpperCase()
     : (user?.username ? user.username.charAt(0).toUpperCase() : 'U');
 
   return (
     <div className="container px-4 py-8 mx-auto max-w-7xl">
       <div className="flex flex-col gap-8 md:flex-row">
-        
+
         {/* Sidebar Menu */}
         <div className="w-full shrink-0 md:w-64">
           <div className="flex items-center gap-3 p-4 mb-6 border border-gray-100 shadow-sm bg-white rounded-2xl">
@@ -53,18 +81,12 @@ export default function ProfilePage() {
               <p className="text-xs text-gray-500">Thành viên chính thức</p>
             </div>
           </div>
-          
+
           <nav className="flex flex-col gap-1">
-  <Link to="/profile" className="flex items-center gap-3 px-4 py-3 text-sm font-bold text-amber-600 bg-amber-50 rounded-xl">
-    <User className="w-5 h-5" /> Hồ sơ của tôi
-  </Link>
-  <Link to="/profile/orders" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
-    <Package className="w-5 h-5" /> Đơn hàng của tôi
-  </Link>
-  <Link to="/profile/security" className="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 rounded-xl">
-    <Shield className="w-5 h-5" /> Bảo mật & Mật khẩu
-  </Link>
-</nav>
+            <Link to="/profile" className="flex items-center gap-3 px-4 py-3 text-sm font-bold text-amber-600 bg-amber-50 rounded-xl">
+              <User className="w-5 h-5" /> Hồ sơ của tôi
+            </Link>
+          </nav>
         </div>
 
         {/* Main Content */}
@@ -102,7 +124,7 @@ export default function ProfilePage() {
             {!isLoading && !error && user && (
               <div className="py-6 border-t border-gray-100">
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                  
+
                   {/* Họ và tên */}
                   <div className="flex items-start gap-4">
                     <div className="p-2.5 rounded-xl bg-gray-50 text-gray-500 shrink-0">
@@ -132,7 +154,7 @@ export default function ProfilePage() {
                     </div>
                     <div>
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Số điện thoại</p>
-                      <p className="mt-1 text-sm font-semibold text-gray-900">{user.phone || 'Chưa cập nhật'}</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-900">{user.phone_number || 'Chưa cập nhật'}</p>
                     </div>
                   </div>
 
@@ -144,7 +166,7 @@ export default function ProfilePage() {
                     <div>
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Địa chỉ mặc định</p>
                       <p className="mt-1 text-sm font-semibold text-gray-900 leading-relaxed">
-                        {user.address || 'Chưa cập nhật'}
+                        {formatAddress(defaultAddress)}
                       </p>
                     </div>
                   </div>
