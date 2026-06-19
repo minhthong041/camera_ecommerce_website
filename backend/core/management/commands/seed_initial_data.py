@@ -46,8 +46,9 @@ class Command(BaseCommand):
             "confirmed",
             "processing",
             "shipping",
-            "completed",
+            "delivered",
             "cancelled",
+            "refunded",
         ]
 
         for name in statuses:
@@ -85,6 +86,10 @@ class Command(BaseCommand):
             {
                 "name": "vnpay",
                 "description": "VNPAY payment gateway",
+            },
+            {
+                "name": "stripe",
+                "description": "Stripe payment gateway",
             },
         ]
 
