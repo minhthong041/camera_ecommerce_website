@@ -18,7 +18,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             "id",
-            "username"
+            "username",
             "full_name",
             "email",
             "phone_number",
@@ -39,7 +39,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "is_active",
         )
         extra_kwargs = {
-            "username": {"validators": [], "required": False, "allow_blank": True},
             "email": {"validators": [], "required": False, "allow_blank": True},
             "phone_number": {
                 "validators": [],

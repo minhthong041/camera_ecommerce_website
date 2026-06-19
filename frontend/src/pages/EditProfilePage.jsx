@@ -76,7 +76,6 @@ export default function EditProfilePage() {
 
     try {
       const payload = {
-        username: formData.username,
         full_name: formData.full_name,
         email: formData.email,
         phone_number: formData.phone_number,
@@ -202,9 +201,8 @@ export default function EditProfilePage() {
                       type="text"
                       id="username"
                       value={formData.username}
-                      onChange={handleChange}
-                      disabled // Không cho phép chỉnh sửa tên đăng nhập
-                      className="w-full bg-gray-50 border border-gray-200 px-4 py-2.5 rounded-lg text-sm focus:outline-none focus:border-amber-500 focus:bg-white transition-all"
+                      disabled
+                      className="w-full bg-gray-100 border border-gray-200 px-4 py-2.5 text-gray-500 rounded-lg text-sm cursor-not-allowed"
                     />
                   </div>
 
