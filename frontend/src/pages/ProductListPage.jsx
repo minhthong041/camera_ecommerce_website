@@ -22,15 +22,25 @@ export default function ProductListPage() {
   const [searchInput, setSearchInput] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
-  // 2. SỬ DỤNG REACT QUERY ĐỂ LẤY DANH MỤC & THƯƠNG HIỆU (Lưu cache 5 phút)
-  const { data: categoriesData } = useQuery({
+  // 2. SỬ DỤNG REACT QUERY ĐỂ LẤY DANH MỤC & THƯƠNG HIỆU
+  const {
+    data: categoriesData,
+    isError: isCategoriesError,
+    isLoading: isCategoriesLoading,
+    refetch: refetchCategories,
+  } = useQuery({
     queryKey: ["categories"],
     queryFn: () => catalogApi.getCategories(),
     staleTime: 5 * 60 * 1000,
   });
   const categories = categoriesData?.results || categoriesData || [];
 
-  const { data: brandsData } = useQuery({
+  const {
+    data: brandsData,
+    isError: isBrandsError,
+    isLoading: isBrandsLoading,
+    refetch: refetchBrands,
+  } = useQuery({
     queryKey: ["brands"],
     queryFn: () => catalogApi.getBrands(),
     staleTime: 5 * 60 * 1000,
@@ -116,7 +126,7 @@ export default function ProductListPage() {
       </div>
 
       <div className="flex flex-col gap-8 lg:flex-row">
-        {/* SIDEBAR FILTER (Giữ nguyên giao diện của bạn) */}
+        {/* SIDEBAR FILTER */}
         <aside className="w-full space-y-6 lg:w-64 shrink-0">
           <div className="p-5 bg-white border border-gray-100 shadow-sm rounded-xl">
             <div className="flex items-center justify-between pb-4 mb-4 border-b border-gray-100">
@@ -134,110 +144,133 @@ export default function ProductListPage() {
               )}
             </div>
 
+            {/* PHẦN DANH MỤC */}
             <div className="mb-6">
               <h3 className="mb-3 text-xs font-bold tracking-wider text-gray-400 uppercase">
                 Danh mục sản phẩm
               </h3>
-              <div className="pr-1 space-y-2 overflow-y-auto max-h-48">
-                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer group">
-                  <input
-                    type="radio"
-                    name="category"
-                    checked={selectedCategory === ""}
-                    onChange={() => handleCategoryChange("")}
-                    className="w-4 h-4 accent-amber-500"
-                  />
-                  <span
-                    className={
-                      selectedCategory === ""
-                        ? "font-bold text-amber-500"
-                        : "group-hover:text-amber-500 transition-colors"
-                    }
-                  >
-                    Tất cả danh mục
-                  </span>
-                </label>
-                {categories.map((cat) => (
-                  <label
-                    key={cat.id}
-                    className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer group"
-                  >
+              {isCategoriesLoading ? (
+                <LoadingState message="Đang tải..." compact />
+              ) : isCategoriesError ? (
+                <ErrorState
+                  message="Lỗi tải danh mục"
+                  onRetry={() => refetchCategories()}
+                  compact
+                />
+              ) : (
+                <div className="pr-1 space-y-2 overflow-y-auto max-h-48">
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer group">
                     <input
                       type="radio"
                       name="category"
-                      checked={selectedCategory === cat.id}
-                      onChange={() => handleCategoryChange(cat.id)}
+                      checked={selectedCategory === ""}
+                      onChange={() => handleCategoryChange("")}
                       className="w-4 h-4 accent-amber-500"
                     />
                     <span
                       className={
-                        selectedCategory === cat.id
+                        selectedCategory === ""
                           ? "font-bold text-amber-500"
                           : "group-hover:text-amber-500 transition-colors"
                       }
                     >
-                      {cat.name}
+                      Tất cả danh mục
                     </span>
                   </label>
-                ))}
-              </div>
+                  {categories.map((cat) => (
+                    <label
+                      key={cat.id}
+                      className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer group"
+                    >
+                      <input
+                        type="radio"
+                        name="category"
+                        checked={selectedCategory === cat.id}
+                        onChange={() => handleCategoryChange(cat.id)}
+                        className="w-4 h-4 accent-amber-500"
+                      />
+                      <span
+                        className={
+                          selectedCategory === cat.id
+                            ? "font-bold text-amber-500"
+                            : "group-hover:text-amber-500 transition-colors"
+                        }
+                      >
+                        {cat.name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
 
+            {/* PHẦN THƯƠNG HIỆU */}
             <div>
               <h3 className="mb-3 text-xs font-bold tracking-wider text-gray-400 uppercase">
                 Thương hiệu
               </h3>
-              <div className="pr-1 space-y-2 overflow-y-auto max-h-48">
-                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer group">
-                  <input
-                    type="radio"
-                    name="brand"
-                    checked={selectedBrand === ""}
-                    onChange={() => handleBrandChange("")}
-                    className="w-4 h-4 accent-amber-500"
-                  />
-                  <span
-                    className={
-                      selectedBrand === ""
-                        ? "font-bold text-amber-500"
-                        : "group-hover:text-amber-500 transition-colors"
-                    }
-                  >
-                    Tất cả thương hiệu
-                  </span>
-                </label>
-                {brands.map((b) => (
-                  <label
-                    key={b.id}
-                    className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer group"
-                  >
+              {isBrandsLoading ? (
+                <LoadingState message="Đang tải..." compact />
+              ) : isBrandsError ? (
+                <ErrorState
+                  message="Lỗi tải thương hiệu"
+                  onRetry={() => refetchBrands()}
+                  compact
+                />
+              ) : (
+                <div className="pr-1 space-y-2 overflow-y-auto max-h-48">
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer group">
                     <input
                       type="radio"
                       name="brand"
-                      checked={selectedBrand === b.id}
-                      onChange={() => handleBrandChange(b.id)}
+                      checked={selectedBrand === ""}
+                      onChange={() => handleBrandChange("")}
                       className="w-4 h-4 accent-amber-500"
                     />
                     <span
                       className={
-                        selectedBrand === b.id
+                        selectedBrand === ""
                           ? "font-bold text-amber-500"
                           : "group-hover:text-amber-500 transition-colors"
                       }
                     >
-                      {b.name}
+                      Tất cả thương hiệu
                     </span>
                   </label>
-                ))}
-              </div>
+                  {brands.map((b) => (
+                    <label
+                      key={b.id}
+                      className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer group"
+                    >
+                      <input
+                        type="radio"
+                        name="brand"
+                        checked={selectedBrand === b.id}
+                        onChange={() => handleBrandChange(b.id)}
+                        className="w-4 h-4 accent-amber-500"
+                      />
+                      <span
+                        className={
+                          selectedBrand === b.id
+                            ? "font-bold text-amber-500"
+                            : "group-hover:text-amber-500 transition-colors"
+                        }
+                      >
+                        {b.name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        </aside>
-
+          </div>{" "}
+          {/* ĐÃ FIX: Thêm thẻ đóng div cho Sidebar */}
+        </aside>{" "}
+        {/* ĐÃ FIX: Thêm thẻ đóng aside cho Sidebar */}
         {/* DANH SÁCH SẢN PHẨM & PHÂN TRANG */}
         <div className="flex flex-col justify-between flex-grow">
           <div>
-            {/* 5. GẮN COMPONENT DÙNG CHUNG VÀO ĐÂY */}
+            {/* GẮN COMPONENT DÙNG CHUNG VÀO ĐÂY */}
             {isProductsLoading ? (
               <LoadingState message="Đang tải danh sách thiết bị từ máy chủ..." />
             ) : isProductsError ? (
@@ -246,7 +279,9 @@ export default function ProductListPage() {
                   productsError?.message ||
                   "Lỗi kết nối. Không thể lấy dữ liệu sản phẩm."
                 }
-                onRetry={refetchProducts}
+                onRetry={() =>
+                  refetchProducts()
+                } /* ĐÃ FIX: Thêm arrow function theo lời leader */
               />
             ) : products.length === 0 ? (
               <div className="py-20 text-sm text-center text-gray-400 bg-white border border-gray-100 shadow-sm rounded-xl">
