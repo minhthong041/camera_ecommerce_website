@@ -20,7 +20,7 @@ const CartPage = () => {
   });
 
   // Backend thường trả về { id, user, items: [...] }, ta trích xuất mảng items
-  const cartItems = cartData?.items || [];
+  const cartItems = cartData?.cart_items || [];
 
   // 2. MUTATION: Xóa sản phẩm khỏi giỏ hàng
   const removeMutation = useMutation({
@@ -28,6 +28,11 @@ const CartPage = () => {
     onSuccess: () => {
       // Gọi lại API giỏ hàng để cập nhật giao diện
       queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+    onError: (error) => {
+      alert(
+        error.data?.detail || error.message || "Lỗi: Không thể xóa sản phẩm.",
+      );
     },
   });
 
@@ -38,6 +43,13 @@ const CartPage = () => {
     onSuccess: () => {
       // Gọi lại API giỏ hàng để cập nhật giao diện
       queryClient.invalidateQueries({ queryKey: ["cart"] });
+    },
+    onError: (error) => {
+      alert(
+        error.data?.detail ||
+          error.message ||
+          "Lỗi: Không thể cập nhật số lượng.",
+      );
     },
   });
 
@@ -111,13 +123,13 @@ const CartPage = () => {
               cartItems.map((item) => {
                 // Tùy theo cấu trúc backend, dữ liệu sản phẩm có thể bọc trong product_item
                 const productData = item.product_item || item;
-                // Nếu api trả image trong product_item.product.image
                 const imageUrl =
                   productData.product_image ||
                   productData.product?.image ||
                   productData.image;
-                const productName =
-                  productData.product?.name || productData.name;
+
+                // ĐÃ SỬA LỖI 2: Lấy đúng trường product_name từ serializer
+                const productName = productData.product_name;
                 const price = productData.price || 0;
 
                 return (
@@ -163,7 +175,11 @@ const CartPage = () => {
                         />
                         <button
                           onClick={() => handleUpdateQuantity(item, 1)}
-                          disabled={updateQuantityMutation.isPending}
+                          // ĐÃ SỬA LỖI 3: Khóa nút nếu quantity >= qty_in_stock
+                          disabled={
+                            updateQuantityMutation.isPending || 
+                            item.quantity >= productData.qty_in_stock
+                          }
                           className="px-3 py-1 bg-gray-50 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           +

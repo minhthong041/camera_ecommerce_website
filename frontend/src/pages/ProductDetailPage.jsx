@@ -99,9 +99,12 @@ export default function ProductDetailPage() {
 
   // --- SỬ DỤNG REACT QUERY MUTATION ĐỂ XỬ LÝ THÊM VÀO GIỎ ---
   const addToCartMutation = useMutation({
-    mutationFn: (data) => cartApi.addToCart(data),
+    // ĐÃ SỬA: Chỉ lấy product_item_id và quantity để gửi API. Biến goToCheckout bị loại bỏ khỏi request.
+    mutationFn: ({ product_item_id, quantity }) =>
+      cartApi.addToCart({ product_item_id, quantity }),
+
+    // variables ở đây vẫn chứa đầy đủ { product_item_id, quantity, goToCheckout } từ lúc gọi mutate()
     onSuccess: (_, variables) => {
-      // Báo cho React Query biết giỏ hàng đã thay đổi để cập nhật số lượng ở Header
       queryClient.invalidateQueries({ queryKey: ["cart"] });
 
       if (variables.goToCheckout) {
