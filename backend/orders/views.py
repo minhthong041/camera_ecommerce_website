@@ -37,10 +37,16 @@ from .serializers import (
     ReturnRequestSerializer,
     ReturnRequestStatusUpdateSerializer,
 )
+from .state_machine import (
+    CUSTOMER_CANCELLABLE_STATUSES,
+    RESTOCKED_ORDER_STATUSES,
+    allowed_admin_transitions,
+    is_admin_transition_allowed,
+    normalize_status_name,
+)
 
 
 MONEY_QUANTIZER = Decimal("0.01")
-RESTOCKED_ORDER_STATUSES = {"cancelled", "refunded"}
 
 
 def get_configured_order_status(status_name):
@@ -495,8 +501,8 @@ class CustomerOrderViewSet(ReadOnlyModelViewSet):
             if order is None:
                 raise NotFound("Order does not exist.")
 
-            current_status = order.status.name.strip().lower()
-            if current_status not in {"pending", "confirmed"}:
+            current_status = normalize_status_name(order.status.name)
+            if current_status not in CUSTOMER_CANCELLABLE_STATUSES:
                 raise ValidationError(
                     {
                         "status": (
@@ -547,7 +553,7 @@ class AdminOrderViewSet(ReadOnlyModelViewSet):
             if order is None:
                 raise NotFound("Order does not exist.")
 
-            current_status_name = order.status.name.strip().lower()
+            current_status_name = normalize_status_name(order.status.name)
             if current_status_name == new_status_name:
                 order = self.get_queryset().get(pk=order.pk)
                 return Response(
@@ -555,13 +561,20 @@ class AdminOrderViewSet(ReadOnlyModelViewSet):
                     status=status.HTTP_200_OK,
                 )
 
-            if current_status_name in RESTOCKED_ORDER_STATUSES:
+            if not is_admin_transition_allowed(
+                current_status_name,
+                new_status_name,
+            ):
+                allowed_statuses = sorted(
+                    allowed_admin_transitions(current_status_name)
+                )
+                allowed_message = ", ".join(allowed_statuses) or "none"
                 raise ValidationError(
                     {
                         "status": (
-                            f"An order in '{current_status_name}' status cannot "
-                            "be moved to another status because its stock has "
-                            "already been restored."
+                            f"Order status cannot change from "
+                            f"'{current_status_name}' to '{new_status_name}'. "
+                            f"Allowed next statuses: {allowed_message}."
                         )
                     }
                 )

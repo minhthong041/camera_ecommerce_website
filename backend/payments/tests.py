@@ -216,6 +216,91 @@ class PaymentWebhookTests(TestCase):
         self.assertEqual(order.status, self.order_cancelled)
         self.assertEqual(self.product_item.qty_in_stock, 5)
 
+    def test_success_callback_after_customer_cancel_does_not_reopen_order(self):
+        order, payment = self.create_order_and_payment(self.vnpay_method)
+        self.client.force_authenticate(user=self.user)
+        cancel_response = self.client.post(f"/api/orders/{order.pk}/cancel/")
+
+        params = {
+            "vnp_Amount": "10000000",
+            "vnp_ResponseCode": "00",
+            "vnp_TmnCode": "TESTMERCHANT",
+            "vnp_TransactionNo": "VNPAY-LATE-SUCCESS-001",
+            "vnp_TransactionStatus": "00",
+            "vnp_TxnRef": str(payment.pk),
+        }
+        params["vnp_SecureHash"] = self.sign_vnpay_params(params)
+        callback_response = self.client.post(
+            "/api/payments/vnpay/callback/",
+            params,
+            format="json",
+        )
+
+        self.assertEqual(cancel_response.status_code, 200)
+        self.assertEqual(callback_response.status_code, 200)
+        payment.refresh_from_db()
+        order.refresh_from_db()
+        self.product_item.refresh_from_db()
+        self.assertEqual(payment.status, self.payment_paid)
+        self.assertEqual(order.status, self.order_cancelled)
+        self.assertEqual(self.product_item.qty_in_stock, 5)
+
+    def test_failed_callback_after_customer_cancel_does_not_restore_stock_twice(self):
+        order, payment = self.create_order_and_payment(self.vnpay_method)
+        self.client.force_authenticate(user=self.user)
+        cancel_response = self.client.post(f"/api/orders/{order.pk}/cancel/")
+
+        params = {
+            "vnp_Amount": "10000000",
+            "vnp_ResponseCode": "24",
+            "vnp_TmnCode": "TESTMERCHANT",
+            "vnp_TransactionNo": "VNPAY-LATE-FAILED-001",
+            "vnp_TransactionStatus": "02",
+            "vnp_TxnRef": str(payment.pk),
+        }
+        params["vnp_SecureHash"] = self.sign_vnpay_params(params)
+        callback_response = self.client.post(
+            "/api/payments/vnpay/callback/",
+            params,
+            format="json",
+        )
+
+        self.assertEqual(cancel_response.status_code, 200)
+        self.assertEqual(callback_response.status_code, 200)
+        payment.refresh_from_db()
+        order.refresh_from_db()
+        self.product_item.refresh_from_db()
+        self.assertEqual(payment.status, self.payment_failed)
+        self.assertEqual(order.status, self.order_cancelled)
+        self.assertEqual(self.product_item.qty_in_stock, 5)
+
+    def test_successful_payment_prevents_later_customer_cancellation(self):
+        order, payment = self.create_order_and_payment(self.vnpay_method)
+        params = {
+            "vnp_Amount": "10000000",
+            "vnp_ResponseCode": "00",
+            "vnp_TmnCode": "TESTMERCHANT",
+            "vnp_TransactionNo": "VNPAY-SUCCESS-BEFORE-CANCEL-001",
+            "vnp_TransactionStatus": "00",
+            "vnp_TxnRef": str(payment.pk),
+        }
+        params["vnp_SecureHash"] = self.sign_vnpay_params(params)
+        callback_response = self.client.post(
+            "/api/payments/vnpay/callback/",
+            params,
+            format="json",
+        )
+
+        self.client.force_authenticate(user=self.user)
+        cancel_response = self.client.post(f"/api/orders/{order.pk}/cancel/")
+
+        self.assertEqual(callback_response.status_code, 200)
+        self.assertEqual(cancel_response.status_code, 400)
+        order.refresh_from_db()
+        self.product_item.refresh_from_db()
+        self.assertEqual(order.status, self.order_processing)
+        self.assertEqual(self.product_item.qty_in_stock, 3)
+
     def test_vnpay_rejects_invalid_signature_without_changing_data(self):
         order, payment = self.create_order_and_payment(self.vnpay_method)
         response = self.client.post(
