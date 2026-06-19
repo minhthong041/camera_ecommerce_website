@@ -1,13 +1,24 @@
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import Role, User
+from cart.models import CartItem, ShoppingCart
 from catalog.models import Brand, Category, Product, ProductItem
-from locations.models import Address, City, Country, District, Province, Ward
+from locations.models import (
+    Address,
+    City,
+    Country,
+    District,
+    Province,
+    UserAddress,
+    Ward,
+)
+from payments.gateways import GatewayConfigurationError
 from payments.models import Payment, PaymentMethod, PaymentStatus
 
 from .models import (
@@ -58,6 +69,11 @@ class OrderManagementAPITests(TestCase):
             ward=ward,
             postal_code="700000",
         )
+        UserAddress.objects.create(
+            user=cls.customer,
+            address=cls.address,
+            is_default=True,
+        )
 
         brand = Brand.objects.create(name="Test Brand")
         category = Category.objects.create(name="Camera", slug="camera")
@@ -90,6 +106,14 @@ class OrderManagementAPITests(TestCase):
                 "refunded",
             )
         }
+        cls.payment_statuses = {
+            name: PaymentStatus.objects.create(name=name)
+            for name in ("pending", "paid", "failed")
+        }
+        cls.payment_methods = {
+            name: PaymentMethod.objects.create(name=name)
+            for name in ("COD", "VNPay", "bank_transfer")
+        }
 
     def setUp(self):
         self.client = APIClient()
@@ -117,6 +141,15 @@ class OrderManagementAPITests(TestCase):
             quantity=quantity,
         )
         return order
+
+    def create_cart(self, quantity=2):
+        cart = ShoppingCart.objects.create(user=self.customer)
+        CartItem.objects.create(
+            cart=cart,
+            product_item=self.product_item,
+            quantity=quantity,
+        )
+        return cart
 
     def test_customer_only_sees_own_orders_and_nested_lines(self):
         own_order = self.create_order(order_code="ORD-OWN")
@@ -282,6 +315,165 @@ class OrderManagementAPITests(TestCase):
         self.product_item.refresh_from_db()
         self.assertEqual(order.status.name, "delivered")
         self.assertEqual(self.product_item.qty_in_stock, 5)
+
+    def test_shipping_methods_are_available_to_checkout_clients(self):
+        response = self.client.get("/api/shipping-methods/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["id"], self.shipping_method.pk)
+        self.assertEqual(response.data[0]["price"], "30000.00")
+
+    @patch("orders.views.initialize_payment_gateway")
+    def test_checkout_creates_order_and_online_payment_atomically(self, initialize):
+        initialize.return_value = (
+            "vnpay",
+            {"redirect_url": "https://sandbox.example/pay"},
+        )
+        cart = self.create_cart()
+        self.client.force_authenticate(user=self.customer)
+
+        response = self.client.post(
+            "/api/orders/checkout/",
+            {
+                "shipping_address_id": self.address.pk,
+                "shipping_method_id": self.shipping_method.pk,
+                "payment_method_id": self.payment_methods["VNPay"].pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        order = Order.objects.get(pk=response.data["id"])
+        payment = Payment.objects.get(order=order)
+        self.product_item.refresh_from_db()
+        self.assertEqual(order.status.name, "pending")
+        self.assertEqual(payment.status.name, "pending")
+        self.assertEqual(payment.amount, order.total_amount)
+        self.assertEqual(response.data["payment"]["provider"], "vnpay")
+        self.assertEqual(
+            response.data["payment"]["redirect_url"],
+            "https://sandbox.example/pay",
+        )
+        self.assertFalse(CartItem.objects.filter(cart=cart).exists())
+        self.assertEqual(self.product_item.qty_in_stock, 3)
+
+    @patch("orders.views.initialize_payment_gateway")
+    def test_cod_checkout_confirms_order_without_gateway_action(self, initialize):
+        self.create_cart()
+        self.client.force_authenticate(user=self.customer)
+
+        response = self.client.post(
+            "/api/orders/checkout/",
+            {
+                "shipping_address_id": self.address.pk,
+                "shipping_method_id": self.shipping_method.pk,
+                "payment_method_id": self.payment_methods["COD"].pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        order = Order.objects.get(pk=response.data["id"])
+        payment = Payment.objects.get(order=order)
+        self.assertEqual(order.status.name, "confirmed")
+        self.assertEqual(payment.status.name, "pending")
+        self.assertFalse(response.data["payment"]["requires_action"])
+        initialize.assert_not_called()
+
+    @patch("orders.views.initialize_payment_gateway")
+    def test_gateway_initialization_failure_keeps_retryable_order(self, initialize):
+        initialize.side_effect = GatewayConfigurationError(
+            "VNPay gateway is not configured."
+        )
+        self.create_cart()
+        self.client.force_authenticate(user=self.customer)
+
+        response = self.client.post(
+            "/api/orders/checkout/",
+            {
+                "shipping_address_id": self.address.pk,
+                "shipping_method_id": self.shipping_method.pk,
+                "payment_method_id": self.payment_methods["VNPay"].pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Order.objects.count(), 1)
+        self.assertEqual(Payment.objects.count(), 1)
+        self.assertIn("gateway_error", response.data["payment"])
+        self.assertEqual(
+            response.data["payment"]["retry_url"],
+            f"/api/payments/{Payment.objects.get().pk}/initialize/",
+        )
+
+    def test_checkout_rejects_unsupported_payment_before_changing_cart_or_stock(self):
+        cart = self.create_cart()
+        self.client.force_authenticate(user=self.customer)
+
+        response = self.client.post(
+            "/api/orders/checkout/",
+            {
+                "shipping_address_id": self.address.pk,
+                "shipping_method_id": self.shipping_method.pk,
+                "payment_method_id": self.payment_methods["bank_transfer"].pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.product_item.refresh_from_db()
+        self.assertFalse(Order.objects.exists())
+        self.assertTrue(CartItem.objects.filter(cart=cart).exists())
+        self.assertEqual(self.product_item.qty_in_stock, 5)
+
+    def test_cod_payment_is_failed_when_customer_cancels_order(self):
+        self.create_cart()
+        self.client.force_authenticate(user=self.customer)
+        checkout_response = self.client.post(
+            "/api/orders/checkout/",
+            {
+                "shipping_address_id": self.address.pk,
+                "shipping_method_id": self.shipping_method.pk,
+                "payment_method_id": self.payment_methods["COD"].pk,
+            },
+            format="json",
+        )
+        order = Order.objects.get(pk=checkout_response.data["id"])
+        payment = Payment.objects.get(order=order)
+
+        cancel_response = self.client.post(f"/api/orders/{order.pk}/cancel/")
+
+        self.assertEqual(cancel_response.status_code, 200)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status.name, "failed")
+
+    def test_cod_payment_is_paid_when_staff_delivers_order(self):
+        self.create_cart()
+        self.client.force_authenticate(user=self.customer)
+        checkout_response = self.client.post(
+            "/api/orders/checkout/",
+            {
+                "shipping_address_id": self.address.pk,
+                "shipping_method_id": self.shipping_method.pk,
+                "payment_method_id": self.payment_methods["COD"].pk,
+            },
+            format="json",
+        )
+        order = Order.objects.get(pk=checkout_response.data["id"])
+        payment = Payment.objects.get(order=order)
+        self.client.force_authenticate(user=self.staff)
+
+        for next_status in ("processing", "shipping", "delivered"):
+            response = self.client.patch(
+                f"/api/admin/orders/{order.pk}/status/",
+                {"status": next_status},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 200)
+
+        payment.refresh_from_db()
+        self.assertEqual(payment.status.name, "paid")
 
 
 class ReturnRefundAPITests(TestCase):
