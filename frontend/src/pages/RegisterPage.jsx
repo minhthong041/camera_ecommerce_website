@@ -39,7 +39,8 @@ const RegisterPage = () => {
     setIsLoading(true);
 
     // Tách trường confirmPassword ra, chỉ gửi các trường database yêu cầu lên backend
-    const { confirmPassword, ...registerData } = formData;
+    const registerData = { ...formData };
+    delete registerData.confirmPassword;
 
     const result = await register(registerData);
     if (!result.success) {

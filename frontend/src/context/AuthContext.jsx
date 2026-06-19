@@ -1,30 +1,25 @@
-import { createContext, useState, useEffect } from 'react';
+import { createContext, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-// Thay thế import axiosClient bằng authApi
-import authApi from '../api/authApi'; 
+import authApi from '../api/authApi';
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
+  // Tối ưu hóa: Đọc localStorage ngay lúc khởi tạo state, bỏ hẳn useEffect
+  const [user, setUser] = useState(() => {
     const userData = localStorage.getItem('user');
-    if (token && userData) {
-      setUser(JSON.parse(userData));
-    }
-    setLoading(false);
-  }, []);
+    return userData ? JSON.parse(userData) : null;
+  });
+  
+  const [loading] = useState(false); // Không cần loading nữa vì đọc localStorage là đồng bộ
+  const navigate = useNavigate();
 
   const login = async (email, password) => {
     try {
-      // SỬ DỤNG AUTHApi Ở ĐÂY
       const response = await authApi.login({ email, password });
-      
       const { token, user: userData } = response.data; 
+      
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userData));
       setUser(userData);
@@ -37,7 +32,6 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     try {
-      // SỬ DỤNG AUTHApi Ở ĐÂY
       await authApi.register(userData);
       navigate('/login'); 
       return { success: true };
