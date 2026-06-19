@@ -13,6 +13,7 @@ const ErrorState = ({ message = "Đã có lỗi xảy ra", onRetry }) => {
       {/* Nút thử lại nếu có truyền hàm onRetry */}
       {onRetry && (
         <button 
+          type="button" // <-- ĐÃ THÊM DÒNG NÀY
           onClick={onRetry}
           className="px-6 py-2 font-medium text-white transition-colors rounded-md bg-amber-500 hover:bg-amber-600"
         >
