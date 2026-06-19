@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import cartApi from "../api/cartApi";
 import orderApi from "../api/orderApi";
 import LoadingState from "../components/common/LoadingState";
-import ErrorState from "../components/common/ErrorState";
+// ĐÃ XÓA: import ErrorState để sửa lỗi dòng 7
 
 const parseDrfError = (errData) => {
   if (typeof errData === "string") return errData;
@@ -19,7 +19,6 @@ const parseDrfError = (errData) => {
   return "Lỗi không xác định";
 };
 
-// Hàm format địa chỉ chuẩn theo yêu cầu của Leader
 const formatAddress = (address) => {
   if (!address) return "";
   return [
@@ -42,7 +41,6 @@ const CheckoutPage = () => {
   const [selectedPaymentId, setSelectedPaymentId] = useState("");
   const [formError, setFormError] = useState("");
 
-  // FETCH DỮ LIỆU
   const { data: cartData, isLoading: isCartLoading } = useQuery({
     queryKey: ["cart"],
     queryFn: () => cartApi.getCart(),
@@ -66,22 +64,17 @@ const CheckoutPage = () => {
   const paymentMethods =
     paymentMethodsData?.results || paymentMethodsData || [];
 
-  // Tự động chọn giá trị mặc định đầu tiên nếu có dữ liệu
-  useEffect(() => {
-    if (addresses.length > 0 && !selectedAddressId)
-      setSelectedAddressId(addresses[0].id.toString());
-    if (shippingMethods.length > 0 && !selectedShippingId)
-      setSelectedShippingId(shippingMethods[0].id.toString());
-    if (paymentMethods.length > 0 && !selectedPaymentId)
-      setSelectedPaymentId(paymentMethods[0].id.toString());
-  }, [
-    addresses,
-    shippingMethods,
-    paymentMethods,
-    selectedAddressId,
-    selectedShippingId,
-    selectedPaymentId,
-  ]);
+  // ĐÃ SỬA: Dùng Derived State thay vì useEffect.
+  // Nếu người dùng chưa chọn (state = ""), tự động lấy ID của phần tử đầu tiên làm mặc định.
+  const currentAddressId =
+    selectedAddressId ||
+    (addresses.length > 0 ? addresses[0].id.toString() : "");
+  const currentShippingId =
+    selectedShippingId ||
+    (shippingMethods.length > 0 ? shippingMethods[0].id.toString() : "");
+  const currentPaymentId =
+    selectedPaymentId ||
+    (paymentMethods.length > 0 ? paymentMethods[0].id.toString() : "");
 
   const subTotal = cartItems.reduce(
     (acc, item) =>
@@ -90,23 +83,21 @@ const CheckoutPage = () => {
   );
 
   const activeShippingMethod = shippingMethods.find(
-    (m) => m.id.toString() === selectedShippingId.toString(),
+    (m) => m.id.toString() === currentShippingId,
   );
   const shippingFee = activeShippingMethod
     ? Number(activeShippingMethod.price || activeShippingMethod.fee || 0)
     : 0;
   const finalTotal = subTotal + shippingFee;
 
-  // MUTATION 1: TẠO ĐƠN
   const checkoutMutation = useMutation({
     mutationFn: (payload) => orderApi.checkout(payload),
     onSuccess: (orderResponse) => {
       queryClient.invalidateQueries({ queryKey: ["cart"] });
-      // Lấy ID trả về để truyền cho hàm Payment
       const orderId = orderResponse.id;
       paymentMutation.mutate({
         orderId,
-        paymentMethodId: Number(selectedPaymentId),
+        paymentMethodId: Number(currentPaymentId),
       });
     },
     onError: (error) => {
@@ -114,12 +105,10 @@ const CheckoutPage = () => {
     },
   });
 
-  // MUTATION 2: TẠO THANH TOÁN
   const paymentMutation = useMutation({
     mutationFn: ({ orderId, paymentMethodId }) =>
       orderApi.createPayment({ orderId, paymentMethodId }),
     onSuccess: (paymentRes) => {
-      // Chuyển hướng VNPay nếu có redirect_url, ngược lại chuyển sang trang kết quả
       if (paymentRes.redirect_url) {
         window.location.href = paymentRes.redirect_url;
       } else {
@@ -138,17 +127,17 @@ const CheckoutPage = () => {
     e.preventDefault();
     setFormError("");
 
-    if (!selectedAddressId)
+    if (!currentAddressId)
       return setFormError("Vui lòng chọn địa chỉ giao hàng.");
-    if (!selectedShippingId)
+    if (!currentShippingId)
       return setFormError("Vui lòng chọn phương thức vận chuyển.");
-    if (!selectedPaymentId)
+    if (!currentPaymentId)
       return setFormError("Vui lòng chọn phương thức thanh toán.");
     if (cartItems.length === 0) return setFormError("Giỏ hàng trống.");
 
     checkoutMutation.mutate({
-      shipping_address_id: Number(selectedAddressId),
-      shipping_method_id: Number(selectedShippingId),
+      shipping_address_id: Number(currentAddressId),
+      shipping_method_id: Number(currentShippingId),
       promotion_code: null,
     });
   };
@@ -187,12 +176,12 @@ const CheckoutPage = () => {
                     {addresses.map((addr) => (
                       <label
                         key={addr.id}
-                        className={`flex items-start p-4 border rounded-lg cursor-pointer ${selectedAddressId === addr.id.toString() ? "border-orange-500 bg-orange-50" : "hover:bg-gray-50"}`}
+                        className={`flex items-start p-4 border rounded-lg cursor-pointer ${currentAddressId === addr.id.toString() ? "border-orange-500 bg-orange-50" : "hover:bg-gray-50"}`}
                       >
                         <input
                           type="radio"
                           value={addr.id}
-                          checked={selectedAddressId === addr.id.toString()}
+                          checked={currentAddressId === addr.id.toString()}
                           onChange={(e) => setSelectedAddressId(e.target.value)}
                           className="mt-1 mr-3 accent-orange-500"
                         />
@@ -219,13 +208,13 @@ const CheckoutPage = () => {
                   {shippingMethods.map((method) => (
                     <label
                       key={method.id}
-                      className={`flex items-center justify-between p-4 border rounded-lg cursor-pointer ${selectedShippingId === method.id.toString() ? "border-orange-500 bg-orange-50" : "hover:bg-gray-50"}`}
+                      className={`flex items-center justify-between p-4 border rounded-lg cursor-pointer ${currentShippingId === method.id.toString() ? "border-orange-500 bg-orange-50" : "hover:bg-gray-50"}`}
                     >
                       <div className="flex items-center">
                         <input
                           type="radio"
                           value={method.id}
-                          checked={selectedShippingId === method.id.toString()}
+                          checked={currentShippingId === method.id.toString()}
                           onChange={(e) =>
                             setSelectedShippingId(e.target.value)
                           }
@@ -246,7 +235,7 @@ const CheckoutPage = () => {
                 </div>
               </div>
 
-              {/* THANH TOÁN (Render linh động từ backend, tạm ẩn Stripe nếu có) */}
+              {/* THANH TOÁN */}
               <div className="pt-6 border-t border-gray-100">
                 <h2 className="mb-4 text-lg font-bold text-slate-800">
                   3. Phương thức thanh toán
@@ -257,12 +246,12 @@ const CheckoutPage = () => {
                     .map((method) => (
                       <label
                         key={method.id}
-                        className={`flex items-center p-4 border rounded-lg cursor-pointer ${selectedPaymentId === method.id.toString() ? "border-blue-500 bg-blue-50" : "hover:bg-gray-50"}`}
+                        className={`flex items-center p-4 border rounded-lg cursor-pointer ${currentPaymentId === method.id.toString() ? "border-blue-500 bg-blue-50" : "hover:bg-gray-50"}`}
                       >
                         <input
                           type="radio"
                           value={method.id}
-                          checked={selectedPaymentId === method.id.toString()}
+                          checked={currentPaymentId === method.id.toString()}
                           onChange={(e) => setSelectedPaymentId(e.target.value)}
                           className="mr-3 accent-blue-500"
                         />
