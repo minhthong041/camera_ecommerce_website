@@ -4,19 +4,32 @@ import { useNavigate } from 'react-router-dom';
 export default function ProductCard({ product }) {
   const navigate = useNavigate();
 
-  // Trích xuất an toàn các trường nằm sâu trong object theo thiết kế thực tế của Backend
-  const firstItem = product?.items?.[0] || {};
-  const price = firstItem?.price;
-  const oldPrice = firstItem?.old_price || product?.oldPrice; // Dự phòng fallback
-  const image = firstItem?.product_image || product?.image;
-  const stockQuantity = firstItem?.qty_in_stock || 0;
-  
+  const items = product?.items || [];
+  const availableItems = items.filter((item) => Number(item.qty_in_stock) > 0);
+  const displayItems = availableItems.length > 0 ? availableItems : items;
+  const primaryItem = displayItems[0] || {};
+  const prices = displayItems
+    .map((item) => Number(item.price))
+    .filter(Number.isFinite);
+  const price = prices.length > 0 ? Math.min(...prices) : undefined;
+  const oldPrice = primaryItem.old_price || product?.oldPrice;
+  const image = primaryItem.product_image || product?.image;
+  const stockQuantity = items.reduce(
+    (total, item) => total + (Number(item.qty_in_stock) || 0),
+    0,
+  );
+
   // Xử lý hiển thị tên thương hiệu (Backend trả về object brand: { name, ... })
   const brandName = product?.brand?.name || product?.brand || 'Chính hãng';
 
   const formatVND = (value) => {
     if (value === undefined || value === null) return 'Liên hệ';
-    return value.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return 'Liên hệ';
+    return numericValue.toLocaleString('vi-VN', {
+      style: 'currency',
+      currency: 'VND',
+    });
   };
 
   return (
@@ -35,13 +48,20 @@ export default function ProductCard({ product }) {
           loading="lazy"
         />
         <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2">
-          <button 
+          <button
+            type="button"
             onClick={() => navigate(`/products/${product.id}`)}
+            title="Xem chi tiết"
             className="bg-white p-2.5 rounded-full text-gray-900 shadow-md hover:bg-amber-500 hover:text-white transition-all transform translate-y-2 group-hover:translate-y-0 duration-300"
           >
             <Eye className="w-4 h-4" />
           </button>
-          <button className="bg-white p-2.5 rounded-full text-gray-900 shadow-md hover:bg-gray-900 hover:text-white transition-all transform translate-y-2 group-hover:translate-y-0 duration-300 delay-75">
+          <button
+            type="button"
+            onClick={() => navigate(`/products/${product.id}`)}
+            title="Chọn phiên bản để thêm vào giỏ"
+            className="bg-white p-2.5 rounded-full text-gray-900 shadow-md hover:bg-gray-900 hover:text-white transition-all transform translate-y-2 group-hover:translate-y-0 duration-300 delay-75"
+          >
             <ShoppingCart className="w-4 h-4" />
           </button>
         </div>
@@ -70,7 +90,8 @@ export default function ProductCard({ product }) {
               <span className="text-xs text-gray-400 line-through">{formatVND(oldPrice)}</span>
             )}
           </div>
-          <button 
+          <button
+            type="button"
             onClick={() => navigate(`/products/${product.id}`)}
             className="w-full mt-3 bg-gray-50 border border-gray-100 text-gray-800 py-2 rounded-lg text-xs font-bold hover:bg-gray-900 hover:text-white hover:border-gray-900 transition-all"
           >

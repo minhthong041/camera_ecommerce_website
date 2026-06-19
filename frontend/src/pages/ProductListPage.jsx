@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { catalogApi } from '../api/catalogApi';
 import ProductCard from '../components/ProductCard';
 import { Search, SlidersHorizontal, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
+
+const PAGE_SIZE = 12;
 
 export default function ProductListPage() {
   const [products, setProducts] = useState([]);
@@ -21,7 +23,8 @@ export default function ProductListPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [hasNext, setHasNext] = useState(false);
   const [hasPrevious, setHasPrevious] = useState(false);
-  const pageSize = 12; // Số sản phẩm hiển thị trên mỗi trang
+  const [requestVersion, setRequestVersion] = useState(0);
+  const latestRequestId = useRef(0);
 
   // Lấy dữ liệu bộ lọc tĩnh khi component khởi chạy lần đầu
   useEffect(() => {
@@ -39,55 +42,62 @@ export default function ProductListPage() {
     return () => { isMounted = false; };
   }, []);
 
-  // Đóng gói hàm gọi API bất đồng bộ theo chuẩn
-  const fetchProducts = useCallback(() => {
+  const fetchProducts = useCallback(async () => {
+    const requestId = ++latestRequestId.current;
     const queryParams = {
       categoryId: selectedCategory || undefined,
       brandId: selectedBrand || undefined,
       search: search || undefined,
       page: currentPage,
-      pageSize: pageSize,
+      pageSize: PAGE_SIZE,
+      requestVersion,
     };
 
-    catalogApi.getProducts(queryParams)
-      .then((data) => {
-        // Tách cấu trúc Object phân trang thực tế từ DRF backend
-        if (data && typeof data === 'object' && 'results' in data) {
-          setProducts(data.results || []);
-          setTotalCount(data.count || 0);
-          setHasNext(!!data.next);
-          setHasPrevious(!!data.previous);
-        } else {
-          // Fallback nếu API trả về mảng thô trực tiếp
-          setProducts(Array.isArray(data) ? data : []);
-          setTotalCount(Array.isArray(data) ? data.length : 0);
-          setHasNext(false);
-          setHasPrevious(false);
-        }
-        setLoading(false);
-      })
-      .catch((err) => {
+    try {
+      const data = await catalogApi.getProducts(queryParams);
+      if (requestId !== latestRequestId.current) return;
+
+      if (data && typeof data === 'object' && 'results' in data) {
+        setProducts(data.results || []);
+        setTotalCount(data.count || 0);
+        setHasNext(!!data.next);
+        setHasPrevious(!!data.previous);
+      } else {
+        setProducts(Array.isArray(data) ? data : []);
+        setTotalCount(Array.isArray(data) ? data.length : 0);
+        setHasNext(false);
+        setHasPrevious(false);
+      }
+      setError(null);
+    } catch (err) {
+      if (requestId === latestRequestId.current) {
         setError(err.message || 'Không thể lấy dữ liệu sản phẩm từ API Backend.');
+      }
+    } finally {
+      if (requestId === latestRequestId.current) {
         setLoading(false);
-      });
-  }, [selectedCategory, selectedBrand, search, currentPage]);
+      }
+    }
+  }, [selectedCategory, selectedBrand, search, currentPage, requestVersion]);
 
   useEffect(() => {
-    let isMounted = true;
-    if (isMounted) {
-      fetchProducts();
-    }
-    return () => { isMounted = false; };
+    const timeoutId = window.setTimeout(fetchProducts, 0);
+    return () => {
+      window.clearTimeout(timeoutId);
+      latestRequestId.current += 1;
+    };
   }, [fetchProducts]);
 
   const handleCategoryChange = (id) => {
     setLoading(true);
+    setError(null);
     setSelectedCategory(id);
     setCurrentPage(1); // Reset về trang 1 khi lọc lại
   };
 
   const handleBrandChange = (id) => {
     setLoading(true);
+    setError(null);
     setSelectedBrand(id);
     setCurrentPage(1);
   };
@@ -95,17 +105,21 @@ export default function ProductListPage() {
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     setLoading(true);
-    setSearch(searchInput);
+    setError(null);
+    setSearch(searchInput.trim());
     setCurrentPage(1);
+    setRequestVersion((version) => version + 1);
   };
 
   const handleResetFilters = () => {
     setLoading(true);
+    setError(null);
     setSelectedCategory('');
     setSelectedBrand('');
     setSearch('');
     setSearchInput('');
     setCurrentPage(1);
+    setRequestVersion((version) => version + 1);
   };
 
   return (
@@ -238,21 +252,29 @@ export default function ProductListPage() {
           </div>
 
           {/* THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION CONTROLS) */}
-          {!loading && !error && totalCount > pageSize && (
+          {!loading && !error && totalCount > PAGE_SIZE && (
             <div className="mt-12 flex items-center justify-center gap-4 border-t border-gray-100 pt-6">
               <button
                 disabled={!hasPrevious}
-                onClick={() => { setLoading(true); setCurrentPage(prev => prev - 1); }}
+                onClick={() => {
+                  setLoading(true);
+                  setError(null);
+                  setCurrentPage((page) => page - 1);
+                }}
                 className="flex items-center gap-1 px-4 py-2 text-xs font-bold bg-white border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white transition-all"
               >
                 <ChevronLeft className="w-4 h-4" /> Trang trước
               </button>
               <span className="text-xs font-bold text-gray-500">
-                Trang {currentPage} / {Math.ceil(totalCount / pageSize)}
+                Trang {currentPage} / {Math.ceil(totalCount / PAGE_SIZE)}
               </span>
               <button
                 disabled={!hasNext}
-                onClick={() => { setLoading(true); setCurrentPage(prev => prev + 1); }}
+                onClick={() => {
+                  setLoading(true);
+                  setError(null);
+                  setCurrentPage((page) => page + 1);
+                }}
                 className="flex items-center gap-1 px-4 py-2 text-xs font-bold bg-white border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white transition-all"
               >
                 Trang sau <ChevronRight className="w-4 h-4" />

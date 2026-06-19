@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { catalogApi } from '../api/catalogApi';
+import apiClient from '../api/client';
 import { ShieldCheck, Truck, RefreshCw, Minus, Plus, ShoppingCart, ChevronRight, Home } from 'lucide-react';
 
 export default function ProductDetailPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [quantity, setQuantity] = useState(1);
-  
+
   // Quản lý biến thể được chọn từ trường dữ liệu API thật
   const [selectedItemIndex, setSelectedItemIndex] = useState(0);
+  const [cartAction, setCartAction] = useState(null);
+  const [cartMessage, setCartMessage] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -20,6 +24,11 @@ export default function ProductDetailPage() {
       .then((data) => {
         if (isMounted) {
           setProduct(data);
+          const productItems = data.product_items || data.items || [];
+          const firstAvailableIndex = productItems.findIndex(
+            (item) => Number(item.qty_in_stock) > 0,
+          );
+          setSelectedItemIndex(firstAvailableIndex >= 0 ? firstAvailableIndex : 0);
           setLoading(false);
         }
       })
@@ -38,19 +47,26 @@ export default function ProductDetailPage() {
       setError(null);
       setSelectedItemIndex(0);
       setQuantity(1);
+      setCartAction(null);
+      setCartMessage('');
     };
   }, [id]);
 
   const formatVND = (price) => {
     if (price === undefined || price === null) return 'Liên hệ';
-    return price.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
+    const numericPrice = Number(price);
+    if (!Number.isFinite(numericPrice)) return 'Liên hệ';
+    return numericPrice.toLocaleString('vi-VN', {
+      style: 'currency',
+      currency: 'VND',
+    });
   };
 
   const handleQuantityChange = (type, maxStock) => {
     if (type === 'decrease' && quantity > 1) {
-      setQuantity(quantity - 1);
+      setQuantity((currentQuantity) => currentQuantity - 1);
     } else if (type === 'increase' && quantity < maxStock) {
-      setQuantity(quantity + 1);
+      setQuantity((currentQuantity) => currentQuantity + 1);
     }
   };
 
@@ -61,14 +77,68 @@ export default function ProductDetailPage() {
   // Trích xuất dữ liệu thật từ các cấu trúc mảng Backend trả về
   const items = product.product_items || product.items || [];
   const currentItem = items[selectedItemIndex] || {};
-  
+
   const currentPrice = currentItem.price || product.price;
   const currentOldPrice = currentItem.old_price || product.oldPrice;
   const currentImage = currentItem.product_image || product.image;
-  const currentStock = currentItem.qty_in_stock ?? 0;
-  
+  const currentStock = Number(currentItem.qty_in_stock) || 0;
+
   const brandName = product.brand?.name || product.brand || 'Chính hãng';
   const specifications = product.tech_specs || {};
+
+  const getApiErrorMessage = (apiError) => {
+    const errorData = apiError.data;
+    if (errorData?.detail) return errorData.detail;
+
+    if (errorData && typeof errorData === 'object') {
+      const firstError = Object.values(errorData).flat().find(Boolean);
+      if (firstError) return String(firstError);
+    }
+
+    return apiError.message || 'Không thể cập nhật giỏ hàng.';
+  };
+
+  const handleAddToCart = async (goToCheckout = false) => {
+    if (!currentItem.id || currentStock <= 0) return;
+
+    const accessToken = localStorage.getItem('token');
+    if (!accessToken) {
+      navigate('/login', { state: { from: `/products/${id}` } });
+      return;
+    }
+
+    setCartAction(goToCheckout ? 'checkout' : 'cart');
+    setCartMessage('');
+
+    try {
+      await apiClient.post(
+        '/cart/items/',
+        {
+          product_item_id: currentItem.id,
+          quantity,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+
+      if (goToCheckout) {
+        navigate('/checkout');
+      } else {
+        setCartMessage('Đã thêm sản phẩm vào giỏ hàng.');
+      }
+    } catch (apiError) {
+      if (apiError.status === 401) {
+        navigate('/login', { state: { from: `/products/${id}` } });
+        return;
+      }
+      setCartMessage(getApiErrorMessage(apiError));
+    } finally {
+      setCartAction(null);
+    }
+  };
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl">
@@ -142,8 +212,13 @@ export default function ProductDetailPage() {
                 <div className="flex flex-wrap gap-2">
                   {items.map((item, idx) => (
                     <button
+                      type="button"
                       key={item.id || idx}
-                      onClick={() => { setSelectedItemIndex(idx); setQuantity(1); }}
+                      onClick={() => {
+                        setSelectedItemIndex(idx);
+                        setQuantity(1);
+                        setCartMessage('');
+                      }}
                       className={`px-3 py-2 border text-xs font-semibold rounded-lg transition-all ${
                         selectedItemIndex === idx
                           ? 'border-amber-500 bg-amber-500 text-white shadow-sm'
@@ -205,19 +280,29 @@ export default function ProductDetailPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3">
-              <button 
-                disabled={currentStock === 0}
+              <button
+                type="button"
+                disabled={currentStock === 0 || cartAction !== null}
+                onClick={() => handleAddToCart(false)}
                 className="flex-1 bg-gray-900 text-white font-bold py-3.5 px-6 rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-amber-500 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all shadow-md shadow-gray-900/10"
               >
-                <ShoppingCart className="w-4 h-4" /> Thêm vào giỏ hàng
+                <ShoppingCart className="w-4 h-4" />
+                {cartAction === 'cart' ? 'Đang thêm...' : 'Thêm vào giỏ hàng'}
               </button>
-              <button 
-                disabled={currentStock === 0}
+              <button
+                type="button"
+                disabled={currentStock === 0 || cartAction !== null}
+                onClick={() => handleAddToCart(true)}
                 className="flex-1 bg-amber-500 text-white font-bold py-3.5 px-6 rounded-xl text-sm hover:bg-amber-600 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-all shadow-md shadow-amber-500/10"
               >
-                Mua ngay lập tức
+                {cartAction === 'checkout' ? 'Đang xử lý...' : 'Mua ngay lập tức'}
               </button>
             </div>
+            {cartMessage && (
+              <p className="text-sm font-medium text-gray-700" role="status">
+                {cartMessage}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6 pt-6 border-t border-gray-100 text-[11px] text-gray-500">
