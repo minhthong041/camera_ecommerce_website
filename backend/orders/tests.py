@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from accounts.models import User
+from accounts.models import Role, User
 from catalog.models import Brand, Category, Product, ProductItem
 from locations.models import Address, City, Country, District, Province, Ward
 
@@ -13,17 +13,21 @@ from .models import Order, OrderLine, OrderStatus, ShippingMethod
 class OrderManagementAPITests(TestCase):
     @classmethod
     def setUpTestData(cls):
+        customer_role = Role.objects.create(name="customer")
+        staff_role = Role.objects.create(name="staff")
         cls.customer = User.objects.create_user(
             username="customer",
             email="customer@example.com",
             full_name="Customer",
             password="StrongPassword123!",
+            role=customer_role,
         )
         cls.other_customer = User.objects.create_user(
             username="other-customer",
             email="other@example.com",
             full_name="Other Customer",
             password="StrongPassword123!",
+            role=customer_role,
         )
         cls.staff = User.objects.create_user(
             username="staff",
@@ -31,6 +35,7 @@ class OrderManagementAPITests(TestCase):
             full_name="Staff",
             password="StrongPassword123!",
             is_staff=True,
+            role=staff_role,
         )
 
         country = Country.objects.create(name="Vietnam", iso_code="VN")
