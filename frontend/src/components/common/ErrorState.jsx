@@ -6,6 +6,8 @@ const ErrorState = ({
   return (
     <div
       className={`flex flex-col items-center justify-center w-full text-center ${compact ? "py-4" : "min-h-[40vh] p-8"}`}
+      role="alert"
+      aria-live="assertive"
     >
       <div
         className={`flex items-center justify-center mb-4 bg-red-100 rounded-full ${compact ? "w-10 h-10 mb-2" : "w-16 h-16"}`}
