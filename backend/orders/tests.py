@@ -250,6 +250,39 @@ class OrderManagementAPITests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.status.name, "pending")
 
+    def test_admin_rejects_skipping_required_order_statuses(self):
+        order = self.create_order(status_name="pending")
+        self.client.force_authenticate(user=self.staff)
+
+        response = self.client.patch(
+            f"/api/admin/orders/{order.pk}/status/",
+            {"status": "shipping"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        order.refresh_from_db()
+        self.product_item.refresh_from_db()
+        self.assertEqual(order.status.name, "pending")
+        self.assertEqual(self.product_item.qty_in_stock, 5)
+
+    def test_admin_can_follow_the_fulfilment_status_sequence(self):
+        order = self.create_order(status_name="pending")
+        self.client.force_authenticate(user=self.staff)
+
+        for next_status in ("confirmed", "processing", "shipping", "delivered"):
+            response = self.client.patch(
+                f"/api/admin/orders/{order.pk}/status/",
+                {"status": next_status},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 200)
+
+        order.refresh_from_db()
+        self.product_item.refresh_from_db()
+        self.assertEqual(order.status.name, "delivered")
+        self.assertEqual(self.product_item.qty_in_stock, 5)
+
 
 class ReturnRefundAPITests(TestCase):
     @classmethod

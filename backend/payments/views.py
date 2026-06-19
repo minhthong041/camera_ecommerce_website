@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
@@ -17,6 +18,12 @@ from rest_framework.views import APIView
 
 from catalog.models import ProductItem
 from orders.models import Order, OrderLine, OrderStatus
+from orders.state_machine import (
+    normalize_status_name,
+    payment_failure_restores_stock,
+    payment_order_target,
+    payment_success_requires_refund,
+)
 
 from .models import Payment, PaymentMethod, PaymentStatus
 from .serializers import (
@@ -53,6 +60,7 @@ ZERO_DECIMAL_CURRENCIES = {
     "xof",
     "xpf",
 }
+logger = logging.getLogger(__name__)
 
 
 class GatewayConfigurationError(APIException):
@@ -161,34 +169,52 @@ def process_gateway_result(
             .get(pk=payment.order_id)
         )
 
+        current_order_status = normalize_status_name(order.status.name)
+        target_order_status = payment_order_target(
+            current_order_status,
+            succeeded=succeeded,
+        )
+
         if succeeded:
             payment_status = get_status_object(
                 PaymentStatus,
                 PAYMENT_SUCCESS_STATUSES,
                 "Completed or Paid payment status is not configured.",
             )
-            order_status = get_status_object(
-                OrderStatus,
-                ORDER_SUCCESS_STATUSES,
-                "Processing or Paid order status is not configured.",
-            )
+            if payment_success_requires_refund(current_order_status):
+                logger.warning(
+                    (
+                        "Payment %s succeeded after order %s entered %s; "
+                        "refund is required."
+                    ),
+                    payment.pk,
+                    order.pk,
+                    current_order_status,
+                )
         else:
             payment_status = get_status_object(
                 PaymentStatus,
                 PAYMENT_FAILED_STATUSES,
                 "Failed payment status is not configured.",
             )
+            if payment_failure_restores_stock(current_order_status):
+                restore_order_stock(order)
+
+        order_status = None
+        if target_order_status != current_order_status:
+            status_candidates = (
+                ORDER_SUCCESS_STATUSES if succeeded else ORDER_FAILED_STATUSES
+            )
+            status_error = (
+                "Processing or Paid order status is not configured."
+                if succeeded
+                else "Cancelled order status is not configured."
+            )
             order_status = get_status_object(
                 OrderStatus,
-                ORDER_FAILED_STATUSES,
-                "Cancelled order status is not configured.",
+                status_candidates,
+                status_error,
             )
-
-            order_is_cancelled = (
-                order.status.name.strip().lower() in ORDER_FAILED_STATUSES
-            )
-            if not order_is_cancelled:
-                restore_order_stock(order)
 
         payment.provider_transaction_id = provider_transaction_id
         payment.status = payment_status
@@ -200,8 +226,9 @@ def process_gateway_result(
             )
         )
 
-        order.status = order_status
-        order.save(update_fields=("status",))
+        if order_status is not None:
+            order.status = order_status
+            order.save(update_fields=("status",))
 
         return payment, False
 
