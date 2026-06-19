@@ -1,4 +1,4 @@
-import { createContext, useState } from "react";
+import { createContext, useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import authApi from "../api/authApi";
 
@@ -14,6 +14,11 @@ export const AuthProvider = ({ children }) => {
   const [loading] = useState(false);
   const navigate = useNavigate();
 
+  const updateUser = useCallback((userData) => {
+    localStorage.setItem("user", JSON.stringify(userData));
+    setUser(userData);
+  }, []);
+
   const login = async (identifier, password) => {
     try {
       const response = await authApi.login({ identifier, password });
@@ -23,8 +28,7 @@ export const AuthProvider = ({ children }) => {
 
       localStorage.setItem("token", access);
       localStorage.setItem("refresh", refresh); // Lưu refresh token vào máy
-      localStorage.setItem("user", JSON.stringify(userData));
-      setUser(userData);
+      updateUser(userData);
       navigate("/");
       return { success: true };
     } catch (error) {
@@ -89,7 +93,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, loading }}>
+    <AuthContext.Provider
+      value={{ user, login, register, logout, updateUser, loading }}
+    >
       {!loading && children}
     </AuthContext.Provider>
   );
