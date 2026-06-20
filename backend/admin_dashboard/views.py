@@ -90,9 +90,10 @@ class PromotionViewSet(SafeDestroyModelViewSet):
     serializer_class = AdminPromotionSerializer
 
     def get_queryset(self):
-        return Promotion.objects.select_related("discount_type").order_by(
-            "-start_date",
-            "code",
+        return (
+            Promotion.objects.select_related("discount_type")
+            .prefetch_related("promotion_categories", "promotion_users")
+            .order_by("-start_date", "code")
         )
 
 

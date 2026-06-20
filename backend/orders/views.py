@@ -18,7 +18,7 @@ from catalog.models import ProductItem
 from locations.models import Address
 from payments.gateways import initialize_payment_gateway, normalize_provider_name
 from payments.models import Payment, PaymentMethod, PaymentStatus
-from promotions.models import Promotion
+from promotions.services import PromotionLine, PromotionRuleError, quote_promotion
 from admin_dashboard.permissions import IsAdminRole, IsStaffRole
 
 from .models import (
@@ -411,8 +411,29 @@ class CheckoutAPIView(APIView):
             discount_amount = Decimal("0.00")
             promotion_code = checkout_data.get("promotion_code")
             if promotion_code:
-                promotion = self.get_valid_promotion(promotion_code, subtotal)
-                discount_amount = self.calculate_discount_amount(promotion, subtotal)
+                promotion_lines = tuple(
+                    PromotionLine(
+                        category_id=product_item_map[
+                            item.product_item_id
+                        ].product.category_id,
+                        unit_price=product_item_map[item.product_item_id].price,
+                        quantity=item.quantity,
+                    )
+                    for item in cart_items
+                )
+                try:
+                    promotion_quote = quote_promotion(
+                        code=promotion_code,
+                        user=request.user,
+                        lines=promotion_lines,
+                        lock=True,
+                    )
+                except PromotionRuleError as exc:
+                    raise ValidationError(
+                        {"promotion_code": exc.message}
+                    ) from exc
+                promotion = promotion_quote.promotion
+                discount_amount = promotion_quote.discount_amount
 
             total_amount = (
                 subtotal + shipping_fee - discount_amount
@@ -521,63 +542,6 @@ class CheckoutAPIView(APIView):
 
         response_data["payment"] = payment_data
         return Response(response_data, status=status.HTTP_201_CREATED)
-
-    def get_valid_promotion(self, promotion_code, subtotal):
-        try:
-            promotion = (
-                Promotion.objects.select_for_update()
-                .select_related("discount_type")
-                .get(code__iexact=promotion_code)
-            )
-        except Promotion.DoesNotExist:
-            raise ValidationError({"promotion_code": "Promotion code does not exist."})
-
-        now = timezone.now()
-        if now < promotion.start_date:
-            raise ValidationError(
-                {"promotion_code": "Promotion code has not started yet."}
-            )
-
-        if now > promotion.end_date:
-            raise ValidationError({"promotion_code": "Promotion code has expired."})
-
-        min_order_value = promotion.min_order_value or Decimal("0.00")
-        if subtotal < min_order_value:
-            raise ValidationError(
-                {
-                    "promotion_code": (
-                        "Order subtotal is less than the minimum required "
-                        f"({min_order_value})."
-                    )
-                }
-            )
-
-        if promotion.usage_limit is not None:
-            used_count = Order.objects.filter(promotion_id=promotion.id).count()
-            if used_count >= promotion.usage_limit:
-                raise ValidationError(
-                    {"promotion_code": "Promotion usage limit has been reached."}
-                )
-
-        return promotion
-
-    @staticmethod
-    def calculate_discount_amount(promotion, subtotal):
-        discount_type = promotion.discount_type.name.strip().lower()
-
-        if discount_type in {"percentage", "percent", "percent_off"}:
-            discount_amount = subtotal * promotion.discount_value / Decimal("100")
-        elif discount_type in {"fixed_amount", "fixed", "amount"}:
-            discount_amount = promotion.discount_value
-        else:
-            raise ValidationError(
-                {"promotion_code": "Unsupported promotion discount type."}
-            )
-
-        if promotion.max_discount is not None:
-            discount_amount = min(discount_amount, promotion.max_discount)
-
-        return min(discount_amount, subtotal).quantize(MONEY_QUANTIZER)
 
     @staticmethod
     def generate_order_code():
