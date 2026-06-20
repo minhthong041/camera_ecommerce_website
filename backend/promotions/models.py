@@ -1,4 +1,6 @@
 from django.db import models
+from django.db.models import F, Q
+from django.db.models.functions import Lower
 
 
 class DiscountType(models.Model):
@@ -44,9 +46,39 @@ class Promotion(models.Model):
         db_table = "promotions"
         verbose_name = "promotion"
         verbose_name_plural = "promotions"
+        constraints = [
+            models.UniqueConstraint(
+                Lower("code"),
+                condition=Q(code__isnull=False),
+                name="promotions_code_case_insensitive_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(end_date__gt=F("start_date")),
+                name="promotions_end_after_start",
+            ),
+            models.CheckConstraint(
+                condition=Q(discount_value__gt=0),
+                name="promotions_discount_value_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(min_order_value__isnull=True)
+                | Q(min_order_value__gte=0),
+                name="promotions_min_order_value_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=Q(max_discount__isnull=True) | Q(max_discount__gt=0),
+                name="promotions_max_discount_positive",
+            ),
+        ]
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        self.code = (
+            self.code.strip().upper() if self.code and self.code.strip() else None
+        )
+        super().save(*args, **kwargs)
 
 
 class PromotionCategory(models.Model):
