@@ -16,6 +16,7 @@ import {
   Home,
   Heart,
 } from "lucide-react";
+import ProductReviews from "../components/ProductReviews";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
@@ -448,6 +449,7 @@ export default function ProductDetailPage() {
           </div>
         </div>
       </div>
+      <ProductReviews productId={product.id} />
     </div>
   );
 }

@@ -9,6 +9,9 @@ const orderApi = {
   getPaymentMethods: () => client.get("/payments/methods/").then(unwrap),
   getOrders: () => client.get("/orders/").then(unwrap),
   getOrder: (orderId) => client.get(`/orders/${orderId}/`).then(unwrap),
+  cancelOrder: (orderId) => client.post(`/orders/${orderId}/cancel/`).then(unwrap),
+  getReturns: () => client.get("/returns/").then(unwrap),
+  createReturn: (data) => client.post("/returns/", data).then(unwrap),
   initializePayment: (paymentId) =>
     client.post(`/payments/${paymentId}/initialize/`).then(unwrap),
 

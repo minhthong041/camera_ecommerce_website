@@ -21,6 +21,7 @@ import StripePaymentPage from "./pages/StripePaymentPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import AccountSecurityPage from "./pages/AccountSecurityPage";
 import AddressManagementPage from "./pages/AddressManagementPage";
+import OrderDetailPage from "./pages/OrderDetailPage";
 
 export default function App() {
   return (
@@ -70,6 +71,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <OrderHistoryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="profile/orders/:id"
+            element={
+              <ProtectedRoute>
+                <OrderDetailPage />
               </ProtectedRoute>
             }
           />

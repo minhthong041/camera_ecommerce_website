@@ -79,6 +79,7 @@ const OrderHistoryPage = () => {
                     </div>
                   ))}
                 </div>
+                <Link to={`/profile/orders/${order.id}`} className="mt-4 inline-block text-sm font-semibold text-orange-600">Xem chi tiết</Link>
               </article>
             );
           })}
