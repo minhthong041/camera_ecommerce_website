@@ -1,8 +1,18 @@
+from datetime import timedelta
+
+from django.db import IntegrityError, transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from catalog.models import ProductItem
 
-from .models import Order, OrderLine
+from .models import (
+    Order,
+    OrderLine,
+    ReturnRequest,
+    ReturnRequestStatus,
+    ShippingMethod,
+)
 
 
 STANDARD_ORDER_STATUSES = (
@@ -14,11 +24,118 @@ STANDARD_ORDER_STATUSES = (
     "cancelled",
     "refunded",
 )
+RETURN_WINDOW_DAYS = 15
+
+
+class ReturnRequestSerializer(serializers.ModelSerializer):
+    order_id = serializers.IntegerField(read_only=True)
+    order_code = serializers.CharField(source="order.order_code", read_only=True)
+    order_status = serializers.CharField(source="order.status.name", read_only=True)
+    user_id = serializers.IntegerField(read_only=True)
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    status = serializers.CharField(source="status.name", read_only=True)
+
+    class Meta:
+        model = ReturnRequest
+        fields = (
+            "id",
+            "order_id",
+            "order_code",
+            "order_status",
+            "user_id",
+            "user_email",
+            "reason",
+            "status",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class ReturnRequestCreateSerializer(serializers.ModelSerializer):
+    order_id = serializers.PrimaryKeyRelatedField(
+        source="order",
+        queryset=Order.objects.select_related("status", "user"),
+    )
+    reason = serializers.CharField(trim_whitespace=True, allow_blank=False)
+
+    class Meta:
+        model = ReturnRequest
+        fields = ("order_id", "reason")
+
+    def validate(self, attrs):
+        self.validate_order(attrs["order"], self.context["request"].user)
+        return attrs
+
+    @staticmethod
+    def validate_order(order, user):
+        if order.user_id != user.id:
+            raise serializers.ValidationError(
+                {"order_id": "This order does not belong to the current user."}
+            )
+
+        if order.status.name.strip().lower() != "delivered":
+            raise serializers.ValidationError(
+                {"order_id": "Only delivered orders can be returned."}
+            )
+
+        return_deadline = order.created_at + timedelta(days=RETURN_WINDOW_DAYS)
+        if timezone.now() > return_deadline:
+            raise serializers.ValidationError(
+                {"order_id": "Đã quá thời hạn yêu cầu đổi trả"}
+            )
+
+        if ReturnRequest.objects.filter(order=order).exists():
+            raise serializers.ValidationError(
+                {"order_id": "A return request already exists for this order."}
+            )
+
+    def create(self, validated_data):
+        user = self.context["request"].user
+        order = validated_data["order"]
+
+        try:
+            with transaction.atomic():
+                locked_order = (
+                    Order.objects.select_for_update()
+                    .select_related("status", "user")
+                    .get(pk=order.pk)
+                )
+                self.validate_order(locked_order, user)
+                pending_status = ReturnRequestStatus.objects.filter(
+                    name__iexact="pending"
+                ).first()
+                if pending_status is None:
+                    raise serializers.ValidationError(
+                        {"status": "Pending return request status is not configured."}
+                    )
+                return ReturnRequest.objects.create(
+                    order=locked_order,
+                    user=user,
+                    reason=validated_data["reason"],
+                    status=pending_status,
+                )
+        except IntegrityError as exc:
+            raise serializers.ValidationError(
+                {"order_id": "A return request already exists for this order."}
+            ) from exc
+
+
+class ReturnRequestStatusUpdateSerializer(serializers.Serializer):
+    status = serializers.CharField(max_length=20)
+
+    def validate_status(self, value):
+        normalized_status = value.strip().lower()
+        if normalized_status not in {"approved", "rejected"}:
+            raise serializers.ValidationError(
+                "Status must be either 'Approved' or 'Rejected'."
+            )
+        return normalized_status
 
 
 class CheckoutSerializer(serializers.Serializer):
     shipping_address_id = serializers.IntegerField(min_value=1)
     shipping_method_id = serializers.IntegerField(min_value=1)
+    payment_method_id = serializers.IntegerField(min_value=1)
     promotion_code = serializers.CharField(
         max_length=100,
         required=False,
@@ -32,6 +149,13 @@ class CheckoutSerializer(serializers.Serializer):
 
         value = value.strip()
         return value.upper() if value else None
+
+
+class ShippingMethodSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ShippingMethod
+        fields = ("id", "name", "price")
+        read_only_fields = fields
 
 
 class ProductItemSummarySerializer(serializers.ModelSerializer):

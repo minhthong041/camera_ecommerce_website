@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { catalogApi } from "../api/catalogApi";
 import cartApi from "../api/cartApi";
+import wishlistApi from "../api/wishlistApi";
+import { AuthContext } from "../context/AuthContext";
 import {
   ShieldCheck,
   Truck,
@@ -12,11 +14,13 @@ import {
   ShoppingCart,
   ChevronRight,
   Home,
+  Heart,
 } from "lucide-react";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useContext(AuthContext);
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -28,6 +32,13 @@ export default function ProductDetailPage() {
   const [cartMessage, setCartMessage] = useState("");
 
   const queryClient = useQueryClient();
+
+  const { data: wishlist = [] } = useQuery({
+    queryKey: ["wishlist"],
+    queryFn: wishlistApi.getWishlist,
+    enabled: Boolean(user),
+    staleTime: 30_000,
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -145,6 +156,32 @@ export default function ProductDetailPage() {
   };
   // ------------------------------------------------------------
 
+  const favoriteMutation = useMutation({
+    mutationFn: ({ productItemId, isFavorite }) =>
+      isFavorite
+        ? wishlistApi.removeItem(productItemId)
+        : wishlistApi.addItem(productItemId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["wishlist"] }),
+  });
+
+  const handleToggleFavorite = () => {
+    const productItems = product?.product_items || product?.items || [];
+    const selectedItem = productItems[selectedItemIndex];
+    if (!selectedItem?.id) return;
+
+    if (!user) {
+      navigate("/login", { state: { from: `/products/${id}` } });
+      return;
+    }
+
+    favoriteMutation.mutate({
+      productItemId: selectedItem.id,
+      isFavorite: wishlist.some(
+        (entry) => entry.product_item_id === selectedItem.id,
+      ),
+    });
+  };
+
   if (loading)
     return (
       <div className="py-32 text-sm text-center text-gray-500">
@@ -172,6 +209,9 @@ export default function ProductDetailPage() {
   const currentOldPrice = currentItem.old_price || product.oldPrice;
   const currentImage = currentItem.product_image || product.image;
   const currentStock = Number(currentItem.qty_in_stock) || 0;
+  const isFavorite = wishlist.some(
+    (entry) => entry.product_item_id === currentItem.id,
+  );
 
   const brandName = product.brand?.name || product.brand || "Chính hãng";
   const specifications = product.tech_specs || {};
@@ -346,6 +386,22 @@ export default function ProductDetailPage() {
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={handleToggleFavorite}
+                disabled={!currentItem.id || favoriteMutation.isPending}
+                aria-label={
+                  isFavorite ? "Xóa khỏi yêu thích" : "Thêm vào yêu thích"
+                }
+                className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3.5 text-sm font-bold text-gray-700 transition-colors hover:border-red-200 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Heart
+                  className={`h-4 w-4 ${isFavorite ? "fill-red-500 text-red-500" : ""}`}
+                />
+                <span className="sm:hidden">
+                  {isFavorite ? "Đã yêu thích" : "Yêu thích"}
+                </span>
+              </button>
               <button
                 type="button"
                 disabled={currentStock === 0 || cartAction !== null}

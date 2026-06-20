@@ -13,9 +13,10 @@ import RegisterPage from "./pages/RegisterPage";
 import PaymentResultPage from "./pages/PaymentResultPage";
 import AboutPage from "./pages/AboutPage";
 import ContactPage from "./pages/ContactPage";
-
+import WishlistPage from "./pages/WishlistPage";
 import ProfilePage from "./pages/ProfilePage";
 import EditProfilePage from "./pages/EditProfilePage";
+import OrderHistoryPage from "./pages/OrderHistoryPage"; // Đã thêm import này
 
 export default function App() {
   return (
@@ -58,6 +59,22 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="profile/orders"
+            element={
+              <ProtectedRoute>
+                <OrderHistoryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="wishlist"
+            element={
+              <ProtectedRoute>
+                <WishlistPage />
+              </ProtectedRoute>
+            }
+          />
         </Route>
 
         <Route path="/login" element={<LoginPage />} />
@@ -66,6 +83,7 @@ export default function App() {
         <Route path="/payment-result" element={<PaymentResultPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
+        <Route path="/profile/orders" element={<OrderHistoryPage />} />
       </Routes>
     </AuthProvider>
   );

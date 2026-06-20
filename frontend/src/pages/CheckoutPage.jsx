@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import cartApi from "../api/cartApi";
 import orderApi from "../api/orderApi";
 import LoadingState from "../components/common/LoadingState";
-// ĐÃ XÓA: import ErrorState để sửa lỗi dòng 7
 
 const parseDrfError = (errData) => {
   if (typeof errData === "string") return errData;
@@ -61,11 +60,16 @@ const CheckoutPage = () => {
   const cartItems = cartData?.cart_items || [];
   const addresses = addressesData?.results || addressesData || [];
   const shippingMethods = shippingData?.results || shippingData || [];
-  const paymentMethods =
+  const paymentMethodsRaw =
     paymentMethodsData?.results || paymentMethodsData || [];
 
-  // ĐÃ SỬA: Dùng Derived State thay vì useEffect.
-  // Nếu người dùng chưa chọn (state = ""), tự động lấy ID của phần tử đầu tiên làm mặc định.
+  // Lọc bỏ phương thức Stripe không dùng tới
+  const availablePaymentMethods = paymentMethodsRaw.filter(
+    (p) =>
+      !p.name?.toLowerCase().includes("stripe") &&
+      !p.gateway_name?.toLowerCase().includes("stripe"),
+  );
+
   const currentAddressId =
     selectedAddressId ||
     (addresses.length > 0 ? addresses[0].id.toString() : "");
@@ -74,7 +78,9 @@ const CheckoutPage = () => {
     (shippingMethods.length > 0 ? shippingMethods[0].id.toString() : "");
   const currentPaymentId =
     selectedPaymentId ||
-    (paymentMethods.length > 0 ? paymentMethods[0].id.toString() : "");
+    (availablePaymentMethods.length > 0
+      ? availablePaymentMethods[0].id.toString()
+      : "");
 
   const subTotal = cartItems.reduce(
     (acc, item) =>
@@ -90,36 +96,21 @@ const CheckoutPage = () => {
     : 0;
   const finalTotal = subTotal + shippingFee;
 
+  // Gọi duy nhất 1 API Checkout, backend sẽ tự lo phần Payment
   const checkoutMutation = useMutation({
     mutationFn: (payload) => orderApi.checkout(payload),
     onSuccess: (orderResponse) => {
       queryClient.invalidateQueries({ queryKey: ["cart"] });
-      const orderId = orderResponse.id;
-      paymentMutation.mutate({
-        orderId,
-        paymentMethodId: Number(currentPaymentId),
-      });
-    },
-    onError: (error) => {
-      setFormError(parseDrfError(error.data) || "Lỗi tạo đơn hàng.");
-    },
-  });
 
-  const paymentMutation = useMutation({
-    mutationFn: ({ orderId, paymentMethodId }) =>
-      orderApi.createPayment({ orderId, paymentMethodId }),
-    onSuccess: (paymentRes) => {
-      if (paymentRes.redirect_url) {
-        window.location.href = paymentRes.redirect_url;
+      const paymentInfo = orderResponse.payment || {};
+      if (paymentInfo.redirect_url) {
+        window.location.href = paymentInfo.redirect_url;
       } else {
         navigate("/payment-result?status=success");
       }
     },
     onError: (error) => {
-      setFormError(
-        "Tạo đơn thành công nhưng lỗi thanh toán: " +
-          (error.data?.detail || "Vui lòng thử lại trong lịch sử đơn hàng."),
-      );
+      setFormError(parseDrfError(error.data) || "Lỗi tạo đơn hàng.");
     },
   });
 
@@ -138,6 +129,7 @@ const CheckoutPage = () => {
     checkoutMutation.mutate({
       shipping_address_id: Number(currentAddressId),
       shipping_method_id: Number(currentShippingId),
+      payment_method_id: Number(currentPaymentId), // Đã bổ sung payment_method_id
       promotion_code: null,
     });
   };
@@ -241,38 +233,32 @@ const CheckoutPage = () => {
                   3. Phương thức thanh toán
                 </h2>
                 <div className="space-y-3">
-                  {paymentMethods
-                    .filter((p) => !p.name?.toLowerCase().includes("stripe"))
-                    .map((method) => (
-                      <label
-                        key={method.id}
-                        className={`flex items-center p-4 border rounded-lg cursor-pointer ${currentPaymentId === method.id.toString() ? "border-blue-500 bg-blue-50" : "hover:bg-gray-50"}`}
-                      >
-                        <input
-                          type="radio"
-                          value={method.id}
-                          checked={currentPaymentId === method.id.toString()}
-                          onChange={(e) => setSelectedPaymentId(e.target.value)}
-                          className="mr-3 accent-blue-500"
-                        />
-                        <span className="font-medium text-slate-800">
-                          {method.name || method.gateway_name}
-                        </span>
-                      </label>
-                    ))}
+                  {availablePaymentMethods.map((method) => (
+                    <label
+                      key={method.id}
+                      className={`flex items-center p-4 border rounded-lg cursor-pointer ${currentPaymentId === method.id.toString() ? "border-blue-500 bg-blue-50" : "hover:bg-gray-50"}`}
+                    >
+                      <input
+                        type="radio"
+                        value={method.id}
+                        checked={currentPaymentId === method.id.toString()}
+                        onChange={(e) => setSelectedPaymentId(e.target.value)}
+                        className="mr-3 accent-blue-500"
+                      />
+                      <span className="font-medium text-slate-800">
+                        {method.name || method.gateway_name}
+                      </span>
+                    </label>
+                  ))}
                 </div>
               </div>
 
               <button
                 type="submit"
-                disabled={
-                  checkoutMutation.isPending ||
-                  paymentMutation.isPending ||
-                  cartItems.length === 0
-                }
+                disabled={checkoutMutation.isPending || cartItems.length === 0}
                 className="w-full py-4 mt-6 text-lg font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:bg-gray-400"
               >
-                {checkoutMutation.isPending || paymentMutation.isPending
+                {checkoutMutation.isPending
                   ? "Đang xử lý..."
                   : "Tiến hành thanh toán"}
               </button>
@@ -280,7 +266,7 @@ const CheckoutPage = () => {
           </div>
         </div>
 
-        {/* TÓM TẮT ĐƠN HÀNG */}
+        {/* TÓM TẮT */}
         <div className="w-full lg:w-1/3">
           <div className="p-6 bg-slate-50 border border-slate-200 rounded-lg shadow-sm sticky top-6">
             <h3 className="pb-4 mb-4 text-lg font-bold border-b border-slate-200 text-slate-800">
