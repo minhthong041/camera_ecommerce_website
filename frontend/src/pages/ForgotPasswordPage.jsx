@@ -1,16 +1,26 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Mail, Loader2 } from 'lucide-react';
+import authApi from '../api/authApi';
 
 const ForgotPasswordPage = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Ở đây sau này bạn sẽ gọi API gửi email khôi phục. 
-    // Tạm thời mình sẽ set state để đổi giao diện thành công.
-    if (email) {
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await authApi.requestPasswordReset(email.trim());
       setIsSubmitted(true);
+    } catch (requestError) {
+      const apiMessage = requestError.data?.email?.[0] || requestError.message;
+      setError(apiMessage || 'Không thể gửi email khôi phục mật khẩu.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -40,10 +50,13 @@ const ForgotPasswordPage = () => {
               </div>
               <button
                 type="submit"
-                className="w-full px-4 py-2 font-semibold text-white transition duration-200 bg-orange-500 rounded-md hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
+                disabled={isSubmitting}
+                className="flex w-full items-center justify-center gap-2 rounded-md bg-orange-500 px-4 py-2 font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Gửi liên kết khôi phục
+                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                Gửi email khôi phục
               </button>
+              {error && <p className="text-sm text-red-600">{error}</p>}
             </form>
             <div className="text-center text-sm">
               <Link to="/login" className="font-medium text-slate-600 hover:text-orange-500">
@@ -55,10 +68,8 @@ const ForgotPasswordPage = () => {
           // Giao diện thông báo thành công
           <div className="space-y-6 text-center">
             <div className="flex justify-center">
-              <div className="flex items-center justify-center w-16 h-16 bg-green-100 rounded-full">
-                <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                </svg>
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+                <Mail className="h-8 w-8 text-green-600" />
               </div>
             </div>
             <div>
@@ -68,11 +79,10 @@ const ForgotPasswordPage = () => {
                 <span className="font-medium text-slate-800">{email}</span>
               </p>
             </div>
-            <Link to="/login" className="block w-full">
-              <button className="w-full px-4 py-2 font-semibold text-slate-700 transition duration-200 border border-slate-300 rounded-md hover:bg-slate-50">
-                Quay lại trang đăng nhập
-              </button>
+            <Link to={`/reset-password?email=${encodeURIComponent(email)}`} className="block w-full rounded-md bg-gray-900 px-4 py-2 font-semibold text-white">
+              Nhập token và đặt mật khẩu mới
             </Link>
+            <Link to="/login" className="block text-sm font-medium text-gray-600">Quay lại đăng nhập</Link>
           </div>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { Link, NavLink } from "react-router-dom";
-import { Search, ShoppingCart, User, Heart, Phone, LogOut } from "lucide-react";
+import { Search, ShoppingCart, User, Heart, Phone, LogOut, ShieldCheck, Package } from "lucide-react";
 import { useContext, useEffect, useRef, useState } from "react";
 import { AuthContext } from "../context/AuthContext";
 
@@ -157,6 +157,12 @@ export default function Header() {
                         role="menuitem"
                       >
                         <User className="w-3.5 h-3.5" /> Hồ sơ của tôi
+                      </Link>
+                      <Link to="/profile/orders" onClick={() => setIsAccountMenuOpen(false)} className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-amber-50 hover:text-amber-600" role="menuitem">
+                        <Package className="h-3.5 w-3.5" /> Đơn hàng
+                      </Link>
+                      <Link to="/profile/security" onClick={() => setIsAccountMenuOpen(false)} className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-amber-50 hover:text-amber-600" role="menuitem">
+                        <ShieldCheck className="h-3.5 w-3.5" /> Bảo mật
                       </Link>
                       <hr className="my-1 border-gray-100" />
                       <button

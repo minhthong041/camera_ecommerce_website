@@ -18,6 +18,8 @@ import ProfilePage from "./pages/ProfilePage";
 import EditProfilePage from "./pages/EditProfilePage";
 import OrderHistoryPage from "./pages/OrderHistoryPage";
 import StripePaymentPage from "./pages/StripePaymentPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
+import AccountSecurityPage from "./pages/AccountSecurityPage";
 
 export default function App() {
   return (
@@ -71,6 +73,14 @@ export default function App() {
             }
           />
           <Route
+            path="profile/security"
+            element={
+              <ProtectedRoute>
+                <AccountSecurityPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="payment/stripe"
             element={
               <ProtectedRoute>
@@ -91,6 +101,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/payment-result" element={<PaymentResultPage />} />
       </Routes>
     </AuthProvider>
