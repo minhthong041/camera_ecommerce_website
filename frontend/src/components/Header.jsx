@@ -78,9 +78,13 @@ export default function Header() {
             </nav>
 
             <div className="flex items-center gap-4 pl-6 border-l border-gray-200">
-              <button className="relative p-1 text-gray-700 hover:text-amber-500">
+              <Link
+                to="/wishlist"
+                aria-label="Danh sách yêu thích"
+                className="relative p-1 text-gray-700 hover:text-amber-500"
+              >
                 <Heart className="w-5 h-5" />
-              </button>
+              </Link>
 
               <Link to="/cart" className="relative p-1 text-gray-700 hover:text-amber-500">
                 <ShoppingCart className="w-5 h-5" />
