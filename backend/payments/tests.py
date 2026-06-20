@@ -247,6 +247,9 @@ class PaymentWebhookTests(TestCase):
 
         self.assertEqual(first_response.status_code, 200)
         self.assertEqual(second_response.status_code, 200)
+        self.assertFalse(first_response.data["is_success"])
+        self.assertEqual(first_response.data["payment_status"], "Failed")
+        self.assertEqual(first_response.data["order_id"], order.pk)
         self.assertEqual(
             second_response.data["Message"],
             "Transaction already processed",
@@ -281,6 +284,8 @@ class PaymentWebhookTests(TestCase):
 
         self.assertEqual(cancel_response.status_code, 200)
         self.assertEqual(callback_response.status_code, 200)
+        self.assertTrue(callback_response.data["is_success"])
+        self.assertEqual(callback_response.data["payment_status"], "Paid")
         payment.refresh_from_db()
         order.refresh_from_db()
         self.product_item.refresh_from_db()

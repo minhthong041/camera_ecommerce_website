@@ -16,7 +16,8 @@ import ContactPage from "./pages/ContactPage";
 import WishlistPage from "./pages/WishlistPage";
 import ProfilePage from "./pages/ProfilePage";
 import EditProfilePage from "./pages/EditProfilePage";
-import OrderHistoryPage from "./pages/OrderHistoryPage"; // Đã thêm import này
+import OrderHistoryPage from "./pages/OrderHistoryPage";
+import StripePaymentPage from "./pages/StripePaymentPage";
 
 export default function App() {
   return (
@@ -26,6 +27,8 @@ export default function App() {
           <Route index element={<HomePage />} />
           <Route path="products" element={<ProductListPage />} />
           <Route path="products/:id" element={<ProductDetailPage />} />
+          <Route path="about" element={<AboutPage />} />
+          <Route path="contact" element={<ContactPage />} />
 
           <Route
             path="cart"
@@ -68,6 +71,14 @@ export default function App() {
             }
           />
           <Route
+            path="payment/stripe"
+            element={
+              <ProtectedRoute>
+                <StripePaymentPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="wishlist"
             element={
               <ProtectedRoute>
@@ -81,9 +92,6 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/payment-result" element={<PaymentResultPage />} />
-        <Route path="/about" element={<AboutPage />} />
-        <Route path="/contact" element={<ContactPage />} />
-        <Route path="/profile/orders" element={<OrderHistoryPage />} />
       </Routes>
     </AuthProvider>
   );

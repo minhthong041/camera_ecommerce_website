@@ -59,6 +59,19 @@ def is_payment_terminal(payment):
     return payment.status.name.strip().lower() in TERMINAL_PAYMENT_STATUSES
 
 
+def vnpay_result_response(payment, message):
+    payment_status = payment.status.name.strip().lower()
+    return {
+        "RspCode": "00",
+        "Message": message,
+        "is_success": payment_status in PAYMENT_SUCCESS_STATUSES,
+        "payment_id": payment.pk,
+        "payment_status": payment.status.name,
+        "order_id": payment.order_id,
+        "order_code": payment.order.order_code,
+    }
+
+
 def restore_order_stock(order):
     order_lines = list(
         OrderLine.objects.filter(order=order)
@@ -400,13 +413,16 @@ class VNPayCallbackView(APIView):
 
         # Step 2 - Fast idempotency check before opening the transaction.
         existing_payment = (
-            Payment.objects.select_related("status")
+            Payment.objects.select_related("status", "order")
             .filter(provider_transaction_id=provider_transaction_id)
             .first()
         )
         if existing_payment and is_payment_terminal(existing_payment):
             return Response(
-                {"RspCode": "00", "Message": "Transaction already processed"},
+                vnpay_result_response(
+                    existing_payment,
+                    "Transaction already processed",
+                ),
                 status=status.HTTP_200_OK,
             )
 
@@ -439,16 +455,13 @@ class VNPayCallbackView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        message = (
+            "Transaction already processed"
+            if duplicate
+            else "Payment result recorded"
+        )
         return Response(
-            {
-                "RspCode": "00",
-                "Message": (
-                    "Transaction already processed"
-                    if duplicate
-                    else "Payment result recorded"
-                ),
-                "payment_id": payment.pk,
-            },
+            vnpay_result_response(payment, message),
             status=status.HTTP_200_OK,
         )
 

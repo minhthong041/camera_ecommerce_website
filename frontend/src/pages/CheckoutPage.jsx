@@ -31,6 +31,9 @@ const formatAddress = (address) => {
     .join(", ");
 };
 
+const normalizeProvider = (value = "") =>
+  value.toLowerCase().replaceAll(/[_\s-]/g, "");
+
 const CheckoutPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -39,20 +42,37 @@ const CheckoutPage = () => {
   const [selectedShippingId, setSelectedShippingId] = useState("");
   const [selectedPaymentId, setSelectedPaymentId] = useState("");
   const [formError, setFormError] = useState("");
+  const [retryContext, setRetryContext] = useState(null);
 
-  const { data: cartData, isLoading: isCartLoading } = useQuery({
+  const {
+    data: cartData,
+    isLoading: isCartLoading,
+    error: cartError,
+  } = useQuery({
     queryKey: ["cart"],
     queryFn: () => cartApi.getCart(),
   });
-  const { data: addressesData, isLoading: isAddrLoading } = useQuery({
+  const {
+    data: addressesData,
+    isLoading: isAddrLoading,
+    error: addressError,
+  } = useQuery({
     queryKey: ["addresses"],
     queryFn: () => orderApi.getAddresses(),
   });
-  const { data: shippingData, isLoading: isShipLoading } = useQuery({
+  const {
+    data: shippingData,
+    isLoading: isShipLoading,
+    error: shippingError,
+  } = useQuery({
     queryKey: ["shippingMethods"],
     queryFn: () => orderApi.getShippingMethods(),
   });
-  const { data: paymentMethodsData, isLoading: isPaymentLoading } = useQuery({
+  const {
+    data: paymentMethodsData,
+    isLoading: isPaymentLoading,
+    error: paymentMethodError,
+  } = useQuery({
     queryKey: ["paymentMethods"],
     queryFn: () => orderApi.getPaymentMethods(),
   });
@@ -63,11 +83,11 @@ const CheckoutPage = () => {
   const paymentMethodsRaw =
     paymentMethodsData?.results || paymentMethodsData || [];
 
-  // Lọc bỏ phương thức Stripe không dùng tới
+  const stripeEnabled = Boolean(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
   const availablePaymentMethods = paymentMethodsRaw.filter(
-    (p) =>
-      !p.name?.toLowerCase().includes("stripe") &&
-      !p.gateway_name?.toLowerCase().includes("stripe"),
+    (method) =>
+      stripeEnabled ||
+      normalizeProvider(method.name || method.gateway_name) !== "stripe",
   );
 
   const currentAddressId =
@@ -96,27 +116,81 @@ const CheckoutPage = () => {
     : 0;
   const finalTotal = subTotal + shippingFee;
 
-  // Gọi duy nhất 1 API Checkout, backend sẽ tự lo phần Payment
+  const continuePayment = ({ paymentInfo, orderId, orderCode }) => {
+    if (paymentInfo.gateway_error) {
+      setRetryContext({
+        paymentId: paymentInfo.id || paymentInfo.payment_id,
+        orderId,
+        orderCode,
+      });
+      setFormError(
+        `Đơn hàng ${orderCode} đã được tạo nhưng cổng thanh toán chưa khởi tạo được.`,
+      );
+      return;
+    }
+
+    if (paymentInfo.redirect_url) {
+      window.location.assign(paymentInfo.redirect_url);
+      return;
+    }
+
+    if (paymentInfo.client_secret) {
+      sessionStorage.setItem(
+        "stripePayment",
+        JSON.stringify({
+          clientSecret: paymentInfo.client_secret,
+          orderId,
+          orderCode,
+        }),
+      );
+      navigate("/payment/stripe");
+      return;
+    }
+
+    if (normalizeProvider(paymentInfo.provider) === "cod") {
+      navigate(`/payment-result?provider=cod&order_id=${orderId}`);
+      return;
+    }
+
+    setFormError("Cổng thanh toán không trả về bước xử lý tiếp theo.");
+  };
+
   const checkoutMutation = useMutation({
     mutationFn: (payload) => orderApi.checkout(payload),
     onSuccess: (orderResponse) => {
       queryClient.invalidateQueries({ queryKey: ["cart"] });
-
-      const paymentInfo = orderResponse.payment || {};
-      if (paymentInfo.redirect_url) {
-        window.location.href = paymentInfo.redirect_url;
-      } else {
-        navigate("/payment-result?status=success");
-      }
+      continuePayment({
+        paymentInfo: orderResponse.payment || {},
+        orderId: orderResponse.id,
+        orderCode: orderResponse.order_code,
+      });
     },
     onError: (error) => {
       setFormError(parseDrfError(error.data) || "Lỗi tạo đơn hàng.");
     },
   });
 
+  const retryPaymentMutation = useMutation({
+    mutationFn: ({ paymentId }) => orderApi.initializePayment(paymentId),
+    onSuccess: (paymentInfo, context) => {
+      setFormError("");
+      continuePayment({
+        paymentInfo,
+        orderId: context.orderId,
+        orderCode: context.orderCode,
+      });
+    },
+    onError: (error) => {
+      setFormError(
+        parseDrfError(error.data) || "Không thể khởi tạo lại thanh toán.",
+      );
+    },
+  });
+
   const handleSubmitOrder = (e) => {
     e.preventDefault();
     setFormError("");
+    setRetryContext(null);
 
     if (!currentAddressId)
       return setFormError("Vui lòng chọn địa chỉ giao hàng.");
@@ -129,7 +203,7 @@ const CheckoutPage = () => {
     checkoutMutation.mutate({
       shipping_address_id: Number(currentAddressId),
       shipping_method_id: Number(currentShippingId),
-      payment_method_id: Number(currentPaymentId), // Đã bổ sung payment_method_id
+      payment_method_id: Number(currentPaymentId),
       promotion_code: null,
     });
   };
@@ -138,6 +212,16 @@ const CheckoutPage = () => {
     isCartLoading || isAddrLoading || isShipLoading || isPaymentLoading;
   if (isLoading)
     return <LoadingState message="Đang tải thông tin thanh toán..." />;
+
+  const loadingError =
+    cartError || addressError || shippingError || paymentMethodError;
+  if (loadingError) {
+    return (
+      <div className="py-20 text-center text-sm font-medium text-red-600">
+        Không thể tải dữ liệu thanh toán. Vui lòng thử lại.
+      </div>
+    );
+  }
 
   return (
     <div className="container max-w-6xl px-4 py-12 mx-auto">
@@ -151,6 +235,18 @@ const CheckoutPage = () => {
               <div className="p-3 mb-6 text-sm text-red-600 bg-red-50 rounded-md border border-red-100">
                 {formError}
               </div>
+            )}
+            {retryContext && (
+              <button
+                type="button"
+                onClick={() => retryPaymentMutation.mutate(retryContext)}
+                disabled={retryPaymentMutation.isPending}
+                className="mb-6 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {retryPaymentMutation.isPending
+                  ? "Đang thử lại..."
+                  : "Thử lại thanh toán"}
+              </button>
             )}
 
             <form onSubmit={handleSubmitOrder} className="space-y-6">
@@ -178,12 +274,14 @@ const CheckoutPage = () => {
                           className="mt-1 mr-3 accent-orange-500"
                         />
                         <div>
-                          <p className="font-semibold text-slate-800">
-                            {addr.receiver_name} - {addr.phone_number}
-                          </p>
                           <p className="text-sm text-slate-600">
                             {formatAddress(addr)}
                           </p>
+                          {addr.is_default && (
+                            <span className="mt-1 inline-block text-xs font-semibold text-orange-600">
+                              Địa chỉ mặc định
+                            </span>
+                          )}
                         </div>
                       </label>
                     ))}
@@ -305,7 +403,7 @@ const CheckoutPage = () => {
                 <span>Phí vận chuyển</span>
                 <span className="font-medium text-slate-800">
                   {shippingFee === 0
-                    ? "Chưa tính"
+                    ? "Miễn phí"
                     : `${shippingFee.toLocaleString("vi-VN")} ₫`}
                 </span>
               </div>
