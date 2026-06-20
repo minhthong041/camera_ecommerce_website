@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import catalogApi from "../api/catalogApi";
 import ProductCard from "../components/ProductCard";
@@ -15,11 +16,11 @@ import {
 const PAGE_SIZE = 12;
 
 export default function ProductListPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   // 1. CHỈ GIỮ LẠI CÁC STATE DÙNG CHO LỌC & PHÂN TRANG (UI)
-  const [search, setSearch] = useState("");
+  const search = searchParams.get("search") || "";
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedBrand, setSelectedBrand] = useState("");
-  const [searchInput, setSearchInput] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
   // 2. SỬ DỤNG REACT QUERY ĐỂ LẤY DANH MỤC & THƯƠNG HIỆU
@@ -89,15 +90,20 @@ export default function ProductListPage() {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    setSearch(searchInput.trim());
+    const nextParams = new URLSearchParams(searchParams);
+    const nextSearch = new FormData(e.currentTarget).get("search").trim();
+    if (nextSearch) nextParams.set("search", nextSearch);
+    else nextParams.delete("search");
+    setSearchParams(nextParams);
     setCurrentPage(1);
   };
 
   const handleResetFilters = () => {
     setSelectedCategory("");
     setSelectedBrand("");
-    setSearch("");
-    setSearchInput("");
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("search");
+    setSearchParams(nextParams);
     setCurrentPage(1);
   };
 
@@ -112,8 +118,9 @@ export default function ProductListPage() {
           <input
             type="text"
             placeholder="Tìm kiếm máy ảnh, ống kính..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
+            key={search}
+            name="search"
+            defaultValue={search}
             className="w-full py-2 pl-10 pr-4 text-sm transition-all border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
           />
           <button

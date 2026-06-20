@@ -1,13 +1,33 @@
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Search, ShoppingCart, User, Heart, Phone, LogOut, ShieldCheck, Package, MapPin } from "lucide-react";
 import { useContext, useEffect, useRef, useState } from "react";
 import { AuthContext } from "../context/AuthContext";
+import cartApi from "../api/cartApi";
 
 export default function Header() {
   // Lấy thông tin trạng thái đăng nhập toàn cục từ AuthContext của hệ thống
   const { user, logout } = useContext(AuthContext);
+  const navigate = useNavigate();
+  const [searchTerm, setSearchTerm] = useState("");
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
+  const { data: cart } = useQuery({
+    queryKey: ["cart"],
+    queryFn: cartApi.getCart,
+    enabled: Boolean(user),
+    staleTime: 30_000,
+  });
+  const cartCount = (cart?.cart_items || []).reduce(
+    (total, item) => total + Number(item.quantity || 0),
+    0,
+  );
+
+  const submitSearch = (event) => {
+    event.preventDefault();
+    const query = searchTerm.trim();
+    navigate(query ? `/products?search=${encodeURIComponent(query)}` : "/products");
+  };
 
   useEffect(() => {
     const closeAccountMenu = (event) => {
@@ -67,16 +87,18 @@ export default function Header() {
 
           {/* Search Bar */}
           <div className="relative flex-1 hidden max-w-xl md:block">
-            <div className="flex w-full">
+            <form onSubmit={submitSearch} className="flex w-full">
               <input
                 type="text"
                 placeholder="Tìm máy ảnh, ống kính, phụ kiện giá tốt..."
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
                 className="w-full bg-gray-50 border border-gray-200 pl-4 pr-12 py-2.5 rounded-l-lg text-sm focus:outline-none focus:border-amber-500 focus:bg-white transition-all"
               />
-              <button className="flex items-center justify-center px-5 text-white transition-colors bg-gray-900 rounded-r-lg hover:bg-amber-500 hover:text-gray-900">
+              <button type="submit" aria-label="Tìm kiếm" className="flex items-center justify-center px-5 text-white transition-colors bg-gray-900 rounded-r-lg hover:bg-amber-500 hover:text-gray-900">
                 <Search className="w-4 h-4" />
               </button>
-            </div>
+            </form>
           </div>
 
           {/* Actions */}
@@ -118,9 +140,11 @@ export default function Header() {
                 className="relative p-1 text-gray-700 hover:text-amber-500"
               >
                 <ShoppingCart className="w-5 h-5" />
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                  2
-                </span>
+                {user && cartCount > 0 && (
+                  <span className="absolute -top-2 -right-2 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {cartCount > 99 ? "99+" : cartCount}
+                  </span>
+                )}
               </Link>
 
               {/* Tích hợp đồng nhất trạng thái đăng nhập cùng Dropdown Menu */}
