@@ -60,6 +60,7 @@ Tạo database PostgreSQL trong pgAdmin hoặc psql với tên trùng `DB_NAME`,
 ```powershell
 python manage.py migrate
 python manage.py seed_initial_data --with-demo-catalog
+python manage.py seed_vietnam_locations --replace
 python manage.py createsuperuser
 python manage.py runserver
 ```
@@ -103,6 +104,7 @@ Backend container sẽ tự chạy `migrate` trước khi start Django server. S
 
 ```powershell
 docker compose exec backend python manage.py seed_initial_data --with-demo-catalog
+docker compose exec backend python manage.py seed_vietnam_locations --replace
 ```
 
 Tạo superuser:
@@ -262,3 +264,4 @@ Sau đó tạo Pull Request vào `dev`.
 - Commit migrations Django.
 - Database PostgreSQL không nằm trong Git; mỗi thành viên tự tạo DB local và chạy `migrate`.
 - Dữ liệu nền được tạo lại bằng management command `seed_initial_data`.
+- Địa giới Việt Nam hiện hành được tạo bằng `seed_vietnam_locations --replace`.
