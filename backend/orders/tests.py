@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -660,6 +661,23 @@ class ReturnRefundAPITests(TestCase):
         self.assertEqual(first_response.status_code, 201)
         self.assertEqual(second_response.status_code, 400)
         self.assertEqual(ReturnRequest.objects.filter(order=order).count(), 1)
+
+    def test_database_rejects_duplicate_return_request_for_an_order(self):
+        order, _ = self.create_order()
+        ReturnRequest.objects.create(
+            order=order,
+            user=self.customer,
+            reason="First return request.",
+            status=self.return_request_statuses["pending"],
+        )
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            ReturnRequest.objects.create(
+                order=order,
+                user=self.customer,
+                reason="Duplicate return request.",
+                status=self.return_request_statuses["pending"],
+            )
 
     def test_staff_approval_refunds_order_payment_and_restores_stock_once(self):
         order, payment = self.create_order(quantity=2)
