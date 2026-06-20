@@ -7,6 +7,7 @@ from catalog.models import Brand, Category, Product, ProductItem
 from orders.models import ShippingMethod
 from payments.models import PaymentMethod
 from promotions.models import DiscountType, Promotion, PromotionCategory, PromotionUser
+from reviews.models import Review
 
 
 class AdminBrandSerializer(serializers.ModelSerializer):
@@ -27,6 +28,46 @@ class AdminDiscountTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = DiscountType
         fields = ("id", "name")
+
+
+class AdminReviewSerializer(serializers.ModelSerializer):
+    user_id = serializers.IntegerField(read_only=True)
+    user_name = serializers.CharField(source="user.full_name", read_only=True)
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    product_id = serializers.IntegerField(source="product_item.product_id", read_only=True)
+    product_name = serializers.CharField(source="product_item.product.name", read_only=True)
+    sku = serializers.CharField(source="product_item.sku", read_only=True)
+    order_code = serializers.CharField(source="order_line.order.order_code", read_only=True)
+
+    class Meta:
+        model = Review
+        fields = (
+            "id",
+            "user_id",
+            "user_name",
+            "user_email",
+            "product_id",
+            "product_name",
+            "sku",
+            "order_code",
+            "rating",
+            "comment",
+            "is_visible",
+            "created_at",
+        )
+        read_only_fields = (
+            "id",
+            "user_id",
+            "user_name",
+            "user_email",
+            "product_id",
+            "product_name",
+            "sku",
+            "order_code",
+            "rating",
+            "comment",
+            "created_at",
+        )
 
 
 class ManagedUserSerializer(serializers.ModelSerializer):

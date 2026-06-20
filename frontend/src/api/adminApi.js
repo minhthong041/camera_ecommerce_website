@@ -35,6 +35,9 @@ const adminApi = {
   createPromotion: (data) => client.post("/admin/promotions/", data).then(unwrap),
   updatePromotion: (id, data) => client.patch(`/admin/promotions/${id}/`, data).then(unwrap),
   deletePromotion: (id) => client.delete(`/admin/promotions/${id}/`),
+  getReviews: (params = {}) => client.get("/admin/reviews/", { params }).then(unwrap),
+  updateReviewVisibility: (id, isVisible) => client.patch(`/admin/reviews/${id}/`, { is_visible: isVisible }).then(unwrap),
+  deleteReview: (id) => client.delete(`/admin/reviews/${id}/`),
 };
 
 export default adminApi;

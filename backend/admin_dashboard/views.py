@@ -17,6 +17,7 @@ from inventory.services import InventoryError, adjust_stock, record_initial_stoc
 from orders.models import Order, ShippingMethod
 from payments.models import Payment, PaymentMethod
 from promotions.models import DiscountType, Promotion
+from reviews.models import Review
 
 from .permissions import IsAdminRole, IsStaffRole
 from .serializers import (
@@ -27,6 +28,7 @@ from .serializers import (
     AdminProductItemSerializer,
     AdminProductSerializer,
     AdminPromotionSerializer,
+    AdminReviewSerializer,
     AdminShippingMethodSerializer,
     CustomerAccountSerializer,
     EmployeeAccountSerializer,
@@ -146,6 +148,42 @@ class ProductItemViewSet(SafeDestroyModelViewSet):
             self.get_serializer(product_item).data,
             status=status.HTTP_200_OK,
         )
+
+
+class ReviewModerationViewSet(ModelViewSet):
+    serializer_class = AdminReviewSerializer
+    permission_classes = (IsAuthenticated, IsAdminRole | IsStaffRole)
+    http_method_names = ("get", "patch", "delete", "head", "options")
+
+    def get_queryset(self):
+        queryset = Review.objects.select_related(
+            "user",
+            "product_item",
+            "product_item__product",
+            "order_line",
+            "order_line__order",
+        ).order_by("-created_at", "-id")
+        search = self.request.query_params.get("search", "").strip()
+        rating = self.request.query_params.get("rating", "").strip()
+        visibility = self.request.query_params.get("visibility", "").strip().lower()
+        if search:
+            queryset = queryset.filter(
+                Q(product_item__product__name__icontains=search)
+                | Q(user__full_name__icontains=search)
+                | Q(user__email__icontains=search)
+                | Q(order_line__order__order_code__icontains=search)
+            )
+        if rating:
+            try:
+                rating_value = int(rating)
+            except ValueError as exc:
+                raise ValidationError({"rating": "Rating must be an integer."}) from exc
+            if rating_value not in range(1, 6):
+                raise ValidationError({"rating": "Rating must be between 1 and 5."})
+            queryset = queryset.filter(rating=rating_value)
+        if visibility in {"visible", "hidden"}:
+            queryset = queryset.filter(is_visible=visibility == "visible")
+        return queryset
 
 
 class PromotionViewSet(SafeDestroyModelViewSet):
