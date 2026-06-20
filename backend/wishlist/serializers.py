@@ -6,12 +6,14 @@ from .models import WishlistItem
 
 
 class WishlistProductItemSerializer(serializers.ModelSerializer):
+    product_id = serializers.IntegerField(read_only=True)
     product_name = serializers.CharField(source="product.name", read_only=True)
 
     class Meta:
         model = ProductItem
         fields = (
             "id",
+            "product_id",
             "product_name",
             "sku",
             "price",

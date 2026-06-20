@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage';
 import ProductDetailPage from './pages/ProductDetailPage';
 import ProductListPage from './pages/ProductListPage';
 import RegisterPage from './pages/RegisterPage';
+import WishlistPage from './pages/WishlistPage';
 
 import ProfilePage from "./pages/ProfilePage";
 import EditProfilePage from "./pages/EditProfilePage";
@@ -52,6 +53,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <EditProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="wishlist"
+            element={
+              <ProtectedRoute>
+                <WishlistPage />
               </ProtectedRoute>
             }
           />
