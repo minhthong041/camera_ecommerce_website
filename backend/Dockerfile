@@ -12,5 +12,5 @@ COPY . .
 
 EXPOSE 3131
 
-# Đã thay thế runserver bằng gunicorn để chịu tải thực tế
-CMD ["gunicorn", config.wsgi:application", "--bind", "0.0.0.0:3131"]
+
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:3131", "--log-level", "debug"]
