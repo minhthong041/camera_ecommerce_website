@@ -279,7 +279,9 @@ export default function ProductDetailPage() {
               <div>
                 <span className="text-gray-400">Mã thiết bị:</span>
                 <span className="ml-1 font-mono text-gray-700">
-                  #SKU-{currentItem.id || product.id}
+                  {currentItem.sku ||
+                    product.sku ||
+                    `#SKU-${currentItem.id || product.id}`}{" "}
                 </span>
               </div>
             </div>
