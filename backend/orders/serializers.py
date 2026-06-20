@@ -6,7 +6,13 @@ from rest_framework import serializers
 
 from catalog.models import ProductItem
 
-from .models import Order, OrderLine, ReturnRequest, ReturnRequestStatus
+from .models import (
+    Order,
+    OrderLine,
+    ReturnRequest,
+    ReturnRequestStatus,
+    ShippingMethod,
+)
 
 
 STANDARD_ORDER_STATUSES = (
@@ -129,6 +135,7 @@ class ReturnRequestStatusUpdateSerializer(serializers.Serializer):
 class CheckoutSerializer(serializers.Serializer):
     shipping_address_id = serializers.IntegerField(min_value=1)
     shipping_method_id = serializers.IntegerField(min_value=1)
+    payment_method_id = serializers.IntegerField(min_value=1)
     promotion_code = serializers.CharField(
         max_length=100,
         required=False,
@@ -142,6 +149,13 @@ class CheckoutSerializer(serializers.Serializer):
 
         value = value.strip()
         return value.upper() if value else None
+
+
+class ShippingMethodSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ShippingMethod
+        fields = ("id", "name", "price")
+        read_only_fields = fields
 
 
 class ProductItemSummarySerializer(serializers.ModelSerializer):

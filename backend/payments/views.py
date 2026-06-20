@@ -1,23 +1,33 @@
 import hashlib
 import hmac
-from datetime import timedelta
+import logging
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
-from zoneinfo import ZoneInfo
 
 import stripe
 from django.conf import settings
 from django.db import transaction
-from django.utils import timezone
 from rest_framework import generics, status
-from rest_framework.exceptions import APIException, ValidationError
+from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from catalog.models import ProductItem
 from orders.models import Order, OrderLine, OrderStatus
+from orders.state_machine import (
+    normalize_status_name,
+    payment_failure_restores_stock,
+    payment_order_target,
+    payment_success_requires_refund,
+)
 
+from .gateways import (
+    GatewayConfigurationError,
+    ZERO_DECIMAL_CURRENCIES,
+    initialize_payment_gateway,
+    normalize_provider_name,
+)
 from .models import Payment, PaymentMethod, PaymentStatus
 from .serializers import (
     PaymentMethodSerializer,
@@ -34,34 +44,7 @@ TERMINAL_PAYMENT_STATUSES = {
     *PAYMENT_SUCCESS_STATUSES,
     *PAYMENT_FAILED_STATUSES,
 }
-VNPAY_TIME_ZONE = ZoneInfo("Asia/Ho_Chi_Minh")
-ZERO_DECIMAL_CURRENCIES = {
-    "bif",
-    "clp",
-    "djf",
-    "gnf",
-    "jpy",
-    "kmf",
-    "krw",
-    "mga",
-    "pyg",
-    "rwf",
-    "ugx",
-    "vnd",
-    "vuv",
-    "xaf",
-    "xof",
-    "xpf",
-}
-
-
-class GatewayConfigurationError(APIException):
-    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    default_detail = "Payment gateway is not configured."
-
-
-def normalize_name(value):
-    return value.strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+logger = logging.getLogger(__name__)
 
 
 def get_status_object(model, candidates, error_message):
@@ -74,13 +57,6 @@ def get_status_object(model, candidates, error_message):
 
 def is_payment_terminal(payment):
     return payment.status.name.strip().lower() in TERMINAL_PAYMENT_STATUSES
-
-
-def get_client_ip(request):
-    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR", "127.0.0.1")
 
 
 def restore_order_stock(order):
@@ -161,34 +137,52 @@ def process_gateway_result(
             .get(pk=payment.order_id)
         )
 
+        current_order_status = normalize_status_name(order.status.name)
+        target_order_status = payment_order_target(
+            current_order_status,
+            succeeded=succeeded,
+        )
+
         if succeeded:
             payment_status = get_status_object(
                 PaymentStatus,
                 PAYMENT_SUCCESS_STATUSES,
                 "Completed or Paid payment status is not configured.",
             )
-            order_status = get_status_object(
-                OrderStatus,
-                ORDER_SUCCESS_STATUSES,
-                "Processing or Paid order status is not configured.",
-            )
+            if payment_success_requires_refund(current_order_status):
+                logger.warning(
+                    (
+                        "Payment %s succeeded after order %s entered %s; "
+                        "refund is required."
+                    ),
+                    payment.pk,
+                    order.pk,
+                    current_order_status,
+                )
         else:
             payment_status = get_status_object(
                 PaymentStatus,
                 PAYMENT_FAILED_STATUSES,
                 "Failed payment status is not configured.",
             )
+            if payment_failure_restores_stock(current_order_status):
+                restore_order_stock(order)
+
+        order_status = None
+        if target_order_status != current_order_status:
+            status_candidates = (
+                ORDER_SUCCESS_STATUSES if succeeded else ORDER_FAILED_STATUSES
+            )
+            status_error = (
+                "Processing or Paid order status is not configured."
+                if succeeded
+                else "Cancelled order status is not configured."
+            )
             order_status = get_status_object(
                 OrderStatus,
-                ORDER_FAILED_STATUSES,
-                "Cancelled order status is not configured.",
+                status_candidates,
+                status_error,
             )
-
-            order_is_cancelled = (
-                order.status.name.strip().lower() in ORDER_FAILED_STATUSES
-            )
-            if not order_is_cancelled:
-                restore_order_stock(order)
 
         payment.provider_transaction_id = provider_transaction_id
         payment.status = payment_status
@@ -200,8 +194,9 @@ def process_gateway_result(
             )
         )
 
-        order.status = order_status
-        order.save(update_fields=("status",))
+        if order_status is not None:
+            order.status = order_status
+            order.save(update_fields=("status",))
 
         return payment, False
 
@@ -224,10 +219,19 @@ class PaymentCreateView(APIView):
     def post(self, request, *args, **kwargs):
         serializer = PaymentSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
+        payment_method = serializer.validated_data["payment_method"]
+        provider_name = normalize_provider_name(payment_method.name)
+        if provider_name not in {"cod", "vnpay", "stripe"}:
+            raise ValidationError(
+                {
+                    "payment_method_id": (
+                        "Only COD, VNPay, and Stripe are currently supported."
+                    )
+                }
+            )
 
         with transaction.atomic():
             requested_order = serializer.validated_data["order"]
-            payment_method = serializer.validated_data["payment_method"]
             order = (
                 Order.objects.select_for_update()
                 .select_related("status")
@@ -269,114 +273,77 @@ class PaymentCreateView(APIView):
                 status=pending_status,
             )
 
-            provider_name = normalize_name(payment_method.name)
-            if provider_name == "vnpay":
-                gateway_data = self.create_vnpay_payment(request, payment)
-            elif provider_name == "stripe":
-                gateway_data = self.create_stripe_payment(payment)
-            else:
-                raise ValidationError(
-                    {
-                        "payment_method_id": (
-                            "Selected payment method is not an online gateway."
-                        )
-                    }
+            if provider_name == "cod":
+                confirmed_status = get_status_object(
+                    OrderStatus,
+                    ("confirmed",),
+                    "Confirmed order status is not configured.",
                 )
+                order.status = confirmed_status
+                order.save(update_fields=("status",))
 
-            response_data = {
+        gateway_data = {}
+        if provider_name != "cod":
+            try:
+                _, gateway_data = initialize_payment_gateway(request, payment)
+            except APIException as exc:
+                gateway_data = {
+                    "gateway_error": exc.detail,
+                    "retry_url": f"/api/payments/{payment.pk}/initialize/",
+                }
+
+        response_data = {
+            "payment_id": payment.pk,
+            "order_id": order.pk,
+            "provider": provider_name,
+            "amount": str(payment.amount),
+            "status": pending_status.name,
+            "requires_action": provider_name != "cod",
+            **gateway_data,
+        }
+        return Response(response_data, status=status.HTTP_201_CREATED)
+
+
+class PaymentInitializeView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, pk, *args, **kwargs):
+        payment = (
+            Payment.objects.select_related(
+                "order",
+                "order__status",
+                "payment_method",
+                "status",
+            )
+            .filter(pk=pk, order__user=request.user)
+            .first()
+        )
+        if payment is None:
+            raise NotFound("Payment record does not exist.")
+
+        if payment.status.name.strip().lower() != "pending":
+            raise ValidationError(
+                {"payment": "Only Pending payments can be initialized."}
+            )
+
+        if payment.order.status.name.strip().lower() != "pending":
+            raise ValidationError(
+                {"order": "Only Pending orders can initialize online payment."}
+            )
+
+        provider_name, gateway_data = initialize_payment_gateway(request, payment)
+        return Response(
+            {
                 "payment_id": payment.pk,
-                "order_id": order.pk,
+                "order_id": payment.order_id,
                 "provider": provider_name,
                 "amount": str(payment.amount),
-                "status": pending_status.name,
+                "status": payment.status.name,
+                "requires_action": True,
                 **gateway_data,
-            }
-            return Response(response_data, status=status.HTTP_201_CREATED)
-
-    @staticmethod
-    def create_vnpay_payment(request, payment):
-        required_settings = (
-            settings.VNPAY_TMN_CODE,
-            settings.VNPAY_HASH_SECRET,
-            settings.VNPAY_PAYMENT_URL,
-            settings.VNPAY_RETURN_URL,
+            },
+            status=status.HTTP_200_OK,
         )
-        if not all(required_settings):
-            raise GatewayConfigurationError("VNPay gateway is not configured.")
-
-        now = timezone.now().astimezone(VNPAY_TIME_ZONE)
-        params = {
-            "vnp_Version": "2.1.0",
-            "vnp_Command": "pay",
-            "vnp_TmnCode": settings.VNPAY_TMN_CODE,
-            "vnp_Amount": str(int(payment.amount * Decimal("100"))),
-            "vnp_CurrCode": "VND",
-            "vnp_TxnRef": str(payment.pk),
-            "vnp_OrderInfo": f"Thanh toan don hang {payment.order.order_code}",
-            "vnp_OrderType": "other",
-            "vnp_Locale": "vn",
-            "vnp_ReturnUrl": settings.VNPAY_RETURN_URL,
-            "vnp_IpAddr": get_client_ip(request),
-            "vnp_CreateDate": now.strftime("%Y%m%d%H%M%S"),
-            "vnp_ExpireDate": (now + timedelta(minutes=15)).strftime(
-                "%Y%m%d%H%M%S"
-            ),
-        }
-        query_string = urlencode(sorted(params.items()))
-        secure_hash = hmac.new(
-            settings.VNPAY_HASH_SECRET.encode(),
-            query_string.encode(),
-            hashlib.sha512,
-        ).hexdigest()
-
-        return {
-            "redirect_url": (
-                f"{settings.VNPAY_PAYMENT_URL}?{query_string}"
-                f"&vnp_SecureHash={secure_hash}"
-            )
-        }
-
-    @staticmethod
-    def create_stripe_payment(payment):
-        if not settings.STRIPE_SECRET_KEY:
-            raise GatewayConfigurationError("Stripe gateway is not configured.")
-
-        currency = settings.STRIPE_CURRENCY.lower()
-        amount = payment.amount
-        if currency in ZERO_DECIMAL_CURRENCIES:
-            stripe_amount = int(amount.quantize(Decimal("1")))
-        else:
-            stripe_amount = int((amount * Decimal("100")).quantize(Decimal("1")))
-
-        try:
-            client = stripe.StripeClient(settings.STRIPE_SECRET_KEY)
-            payment_intent = client.v1.payment_intents.create(
-                {
-                    "amount": stripe_amount,
-                    "currency": currency,
-                    "automatic_payment_methods": {"enabled": True},
-                    "metadata": {
-                        "payment_id": str(payment.pk),
-                        "order_id": str(payment.order_id),
-                        "order_code": payment.order.order_code,
-                    },
-                },
-                options={
-                    "idempotency_key": f"order-{payment.order_id}-stripe-payment"
-                },
-            )
-        except stripe.StripeError as exc:
-            raise ValidationError(
-                {"payment_gateway": f"Stripe could not create payment: {exc}"}
-            )
-
-        payment.provider_transaction_id = payment_intent.id
-        payment.save(update_fields=("provider_transaction_id", "updated_at"))
-
-        return {
-            "client_secret": payment_intent.client_secret,
-            "provider_transaction_id": payment_intent.id,
-        }
 
 
 class VNPayCallbackView(APIView):

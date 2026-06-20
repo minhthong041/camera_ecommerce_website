@@ -8,6 +8,7 @@ from .views import (
     CheckoutAPIView,
     CustomerOrderViewSet,
     ReturnRequestListCreateAPIView,
+    ShippingMethodListAPIView,
 )
 
 
@@ -20,6 +21,11 @@ admin_router = SimpleRouter()
 admin_router.register("", AdminOrderViewSet, basename="admin-order")
 
 urlpatterns = [
+    path(
+        "shipping-methods/",
+        ShippingMethodListAPIView.as_view(),
+        name="shipping-method-list",
+    ),
     path(
         "returns/",
         ReturnRequestListCreateAPIView.as_view(),

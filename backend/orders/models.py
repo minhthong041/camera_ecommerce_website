@@ -128,6 +128,12 @@ class ReturnRequest(models.Model):
         verbose_name = "return request"
         verbose_name_plural = "return requests"
         ordering = ("-created_at", "-id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("order",),
+                name="return_requests_order_unique",
+            ),
+        ]
 
     def __str__(self):
         return f"Return #{self.pk} - {self.order.order_code}"
