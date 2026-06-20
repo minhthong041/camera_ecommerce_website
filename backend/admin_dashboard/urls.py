@@ -12,6 +12,7 @@ from .views import (
     ProductItemViewSet,
     ProductViewSet,
     PromotionViewSet,
+    ReviewModerationViewSet,
     ShippingMethodViewSet,
 )
 
@@ -29,6 +30,7 @@ router.register("promotions", PromotionViewSet, basename="promotion")
 router.register("discount-types", DiscountTypeViewSet, basename="discount-type")
 router.register("payment-methods", PaymentMethodViewSet, basename="payment-method")
 router.register("shipping-methods", ShippingMethodViewSet, basename="shipping-method")
+router.register("reviews", ReviewModerationViewSet, basename="review")
 
 urlpatterns = [
     path("statistics/", BusinessStatisticsAPIView.as_view(), name="statistics"),

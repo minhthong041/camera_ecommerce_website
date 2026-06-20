@@ -79,7 +79,7 @@ const OrderHistoryPage = () => {
                     </div>
                   ))}
                 </div>
-                <Link to={`/profile/orders/${order.id}`} className="mt-4 inline-block text-sm font-semibold text-orange-600">Xem chi tiết</Link>
+                <Link to={`/profile/orders/${order.id}`} className="mt-4 inline-block text-sm font-semibold text-orange-600">{order.status_name?.toLowerCase() === "delivered" ? "Đánh giá sản phẩm / Xem chi tiết" : "Xem chi tiết"}</Link>
               </article>
             );
           })}

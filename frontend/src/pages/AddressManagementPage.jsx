@@ -11,8 +11,6 @@ const emptyForm = {
   postal_code: "",
   countryId: "",
   provinceId: "",
-  cityId: "",
-  districtId: "",
   wardId: "",
   is_default: false,
 };
@@ -21,8 +19,6 @@ const formatAddress = (address) => [
   address.address_line1,
   address.address_line2,
   address.ward?.name,
-  address.ward?.district?.name,
-  address.ward?.district?.city?.name,
   address.ward?.district?.city?.province?.name,
   address.postal_code,
 ].filter(Boolean).join(", ");
@@ -42,18 +38,14 @@ export default function AddressManagementPage() {
   const addressesQuery = useQuery({ queryKey: ["addresses"], queryFn: addressApi.getAddresses });
   const countriesQuery = useQuery({ queryKey: ["countries"], queryFn: addressApi.getCountries });
   const provincesQuery = useQuery({ queryKey: ["provinces", form.countryId], queryFn: () => addressApi.getProvinces(form.countryId), enabled: Boolean(form.countryId) });
-  const citiesQuery = useQuery({ queryKey: ["cities", form.provinceId], queryFn: () => addressApi.getCities(form.provinceId), enabled: Boolean(form.provinceId) });
-  const districtsQuery = useQuery({ queryKey: ["districts", form.cityId], queryFn: () => addressApi.getDistricts(form.cityId), enabled: Boolean(form.cityId) });
-  const wardsQuery = useQuery({ queryKey: ["wards", form.districtId], queryFn: () => addressApi.getWards(form.districtId), enabled: Boolean(form.districtId) });
+  const wardsQuery = useQuery({ queryKey: ["wards", form.provinceId], queryFn: () => addressApi.getWards(form.provinceId), enabled: Boolean(form.provinceId) });
 
   const addresses = asList(addressesQuery.data);
   const selectGroups = useMemo(() => [
-    { key: "countryId", label: "Quốc gia", options: asList(countriesQuery.data), reset: ["provinceId", "cityId", "districtId", "wardId"] },
-    { key: "provinceId", label: "Tỉnh/Thành", options: asList(provincesQuery.data), reset: ["cityId", "districtId", "wardId"] },
-    { key: "cityId", label: "Thành phố", options: asList(citiesQuery.data), reset: ["districtId", "wardId"] },
-    { key: "districtId", label: "Quận/Huyện", options: asList(districtsQuery.data), reset: ["wardId"] },
+    { key: "countryId", label: "Quốc gia", options: asList(countriesQuery.data), reset: ["provinceId", "wardId"] },
+    { key: "provinceId", label: "Tỉnh/Thành", options: asList(provincesQuery.data), reset: ["wardId"] },
     { key: "wardId", label: "Phường/Xã", options: asList(wardsQuery.data), reset: [] },
-  ], [countriesQuery.data, provincesQuery.data, citiesQuery.data, districtsQuery.data, wardsQuery.data]);
+  ], [countriesQuery.data, provincesQuery.data, wardsQuery.data]);
 
   const closeForm = () => {
     setEditingId(null);
@@ -72,8 +64,6 @@ export default function AddressManagementPage() {
       postal_code: address.postal_code || "",
       countryId: String(province?.country?.id || ""),
       provinceId: String(province?.id || ""),
-      cityId: String(city?.id || ""),
-      districtId: String(district?.id || ""),
       wardId: String(address.ward_id || address.ward?.id || ""),
       is_default: Boolean(address.is_default),
     });

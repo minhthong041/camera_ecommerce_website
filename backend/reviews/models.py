@@ -26,6 +26,7 @@ class Review(models.Model):
         db_index=True,
     )
     comment = models.TextField(null=True, blank=True)
+    is_visible = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

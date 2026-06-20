@@ -128,7 +128,7 @@ def optimized_order_queryset():
             "shipping_address",
             "promotion",
         )
-        .prefetch_related("lines__product_item__product")
+        .prefetch_related("lines__product_item__product", "lines__review")
         .order_by("-created_at", "-id")
     )
 

@@ -36,6 +36,7 @@ class ReviewReadSerializer(serializers.ModelSerializer):
             "order_line_id",
             "rating",
             "comment",
+            "is_visible",
             "created_at",
         )
         read_only_fields = fields
