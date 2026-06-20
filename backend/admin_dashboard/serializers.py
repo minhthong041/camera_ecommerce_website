@@ -107,6 +107,7 @@ class EmployeeAccountSerializer(ManagedUserSerializer):
 class AdminProductSerializer(serializers.ModelSerializer):
     brand_name = serializers.CharField(source="brand.name", read_only=True)
     category_name = serializers.CharField(source="category.name", read_only=True)
+    sku_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Product
@@ -120,7 +121,13 @@ class AdminProductSerializer(serializers.ModelSerializer):
             "description",
             "tech_specs",
             "is_active",
+            "sku_count",
         )
+
+    def validate_tech_specs(self, value):
+        if value is not None and not isinstance(value, dict):
+            raise serializers.ValidationError("Technical specifications must be an object.")
+        return value
 
 
 class AdminProductItemSerializer(serializers.ModelSerializer):
@@ -149,6 +156,11 @@ class AdminProductItemSerializer(serializers.ModelSerializer):
                 }
             )
         return attrs
+
+    def validate_price(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Price must be greater than zero.")
+        return value
 
 
 class StockUpdateSerializer(serializers.Serializer):

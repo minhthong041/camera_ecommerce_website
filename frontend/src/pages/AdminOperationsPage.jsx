@@ -5,7 +5,7 @@ import adminApi from "../api/adminApi";
 import LoadingState from "../components/common/LoadingState";
 import { AuthContext } from "../context/AuthContext";
 import AccountManagementPanel from "../components/admin/AccountManagementPanel";
-import CatalogManagementPanel from "../components/admin/CatalogManagementPanel";
+import ProductManagementPanel from "../components/admin/ProductManagementPanel";
 import PromotionsManagementPanel from "../components/admin/PromotionsManagementPanel";
 import StatisticsPanel from "../components/admin/StatisticsPanel";
 
@@ -58,5 +58,5 @@ export default function AdminOperationsPage() {
   ];
   const tabs = isAdmin ? [...adminTabs, ...sharedTabs] : sharedTabs;
 
-  return <main className="mx-auto max-w-7xl px-4 py-10"><div className="mb-6"><h1 className="text-2xl font-bold text-gray-900">Vận hành cửa hàng</h1><p className="mt-1 text-sm text-gray-500">Quyền hiện tại: <strong>{user?.role_name}</strong></p></div><div className="mb-6 flex overflow-x-auto border-b border-gray-200">{tabs.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => setTab(id)} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${tab === id ? "border-orange-600 text-orange-700" : "border-transparent text-gray-500"}`}><Icon className="h-4 w-4" /> {label}</button>)}</div>{tab === "statistics" && isAdmin && <StatisticsPanel />}{tab === "promotions" && isAdmin && <PromotionsManagementPanel />}{tab === "employees" && isAdmin && <AccountManagementPanel type="employees" />}{tab === "orders" && <OrdersPanel />}{tab === "returns" && <ReturnsPanel />}{tab === "inventory" && <InventoryPanel />}{tab === "catalog" && <CatalogManagementPanel />}{tab === "customers" && <AccountManagementPanel type="customers" />}</main>;
+  return <main className="mx-auto max-w-7xl px-4 py-10"><div className="mb-6"><h1 className="text-2xl font-bold text-gray-900">Vận hành cửa hàng</h1><p className="mt-1 text-sm text-gray-500">Quyền hiện tại: <strong>{user?.role_name}</strong></p></div><div className="mb-6 flex overflow-x-auto border-b border-gray-200">{tabs.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => setTab(id)} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${tab === id ? "border-orange-600 text-orange-700" : "border-transparent text-gray-500"}`}><Icon className="h-4 w-4" /> {label}</button>)}</div>{tab === "statistics" && isAdmin && <StatisticsPanel />}{tab === "promotions" && isAdmin && <PromotionsManagementPanel />}{tab === "employees" && isAdmin && <AccountManagementPanel type="employees" />}{tab === "orders" && <OrdersPanel />}{tab === "returns" && <ReturnsPanel />}{tab === "inventory" && <InventoryPanel />}{tab === "catalog" && <ProductManagementPanel />}{tab === "customers" && <AccountManagementPanel type="customers" />}</main>;
 }

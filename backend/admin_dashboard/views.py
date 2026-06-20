@@ -60,7 +60,11 @@ class ProductViewSet(SafeDestroyModelViewSet):
     serializer_class = AdminProductSerializer
 
     def get_queryset(self):
-        return Product.objects.select_related("brand", "category").order_by("name")
+        return (
+            Product.objects.select_related("brand", "category")
+            .annotate(sku_count=Count("items", distinct=True))
+            .order_by("name")
+        )
 
 
 class BrandViewSet(SafeDestroyModelViewSet):
@@ -104,11 +108,15 @@ class ProductItemViewSet(SafeDestroyModelViewSet):
     serializer_class = AdminProductItemSerializer
 
     def get_queryset(self):
-        return ProductItem.objects.select_related(
+        queryset = ProductItem.objects.select_related(
             "product",
             "product__brand",
             "product__category",
         ).order_by("sku")
+        product_id = self.request.query_params.get("product")
+        if product_id:
+            queryset = queryset.filter(product_id=product_id)
+        return queryset
 
     def perform_create(self, serializer):
         with transaction.atomic():

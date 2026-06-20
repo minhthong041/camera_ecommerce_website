@@ -86,6 +86,7 @@ class AdminManagementAPITests(TestCase):
         list_response = self.client.get("/api/admin/products/")
         self.assertEqual(list_response.status_code, status.HTTP_200_OK)
         self.assertEqual(list_response.data[0]["tech_specs"], {"sensor": "45MP"})
+        self.assertEqual(list_response.data[0]["sku_count"], 1)
 
         create_response = self.client.post(
             "/api/admin/products/",
@@ -108,6 +109,92 @@ class AdminManagementAPITests(TestCase):
         )
         self.assertEqual(update_response.status_code, status.HTTP_200_OK)
         self.assertFalse(update_response.data["is_active"])
+
+    def test_staff_can_create_and_edit_sku_with_inventory_ledger(self):
+        self.authenticate(self.staff)
+        create_response = self.client.post(
+            "/api/admin/product-items/",
+            {
+                "product": self.product.pk,
+                "sku": "EOS-R5-KIT",
+                "price": "99990000.00",
+                "qty_in_stock": 3,
+                "condition": "New",
+            },
+            format="multipart",
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        product_item_id = create_response.data["id"]
+        ledger_entry = InventoryLedgerEntry.objects.get(
+            product_item_id=product_item_id
+        )
+        self.assertEqual(ledger_entry.quantity_before, 0)
+        self.assertEqual(ledger_entry.quantity_after, 3)
+
+        update_response = self.client.patch(
+            f"/api/admin/product-items/{product_item_id}/",
+            {"price": "94990000.00", "condition": "Open box"},
+            format="multipart",
+        )
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data["condition"], "Open box")
+
+        filtered_response = self.client.get(
+            "/api/admin/product-items/",
+            {"product": self.product.pk},
+        )
+        self.assertEqual(filtered_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(filtered_response.data), 2)
+
+    def test_admin_can_delete_unreferenced_product_and_sku(self):
+        self.authenticate(self.admin)
+        product = Product.objects.create(
+            category=self.category,
+            brand=self.brand,
+            name="Temporary camera",
+            tech_specs={},
+        )
+        product_item = ProductItem.objects.create(
+            product=product,
+            sku="TEMP-CAMERA",
+            price=Decimal("1000000.00"),
+        )
+
+        sku_response = self.client.delete(
+            f"/api/admin/product-items/{product_item.pk}/"
+        )
+        self.assertEqual(sku_response.status_code, status.HTTP_204_NO_CONTENT)
+
+        product_response = self.client.delete(f"/api/admin/products/{product.pk}/")
+        self.assertEqual(product_response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Product.objects.filter(pk=product.pk).exists())
+
+    def test_product_and_sku_validation_rejects_invalid_payloads(self):
+        self.authenticate(self.staff)
+        invalid_specs = self.client.post(
+            "/api/admin/products/",
+            {
+                "category": self.category.pk,
+                "brand": self.brand.pk,
+                "name": "Invalid camera",
+                "tech_specs": ["not", "an", "object"],
+            },
+            format="json",
+        )
+        self.assertEqual(invalid_specs.status_code, status.HTTP_400_BAD_REQUEST)
+
+        invalid_price = self.client.post(
+            "/api/admin/product-items/",
+            {
+                "product": self.product.pk,
+                "sku": "FREE-CAMERA",
+                "price": "0.00",
+                "qty_in_stock": 1,
+                "condition": "New",
+            },
+            format="json",
+        )
+        self.assertEqual(invalid_price.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_staff_can_manage_categories_and_customer_accounts(self):
         self.authenticate(self.staff)
