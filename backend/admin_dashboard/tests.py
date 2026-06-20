@@ -109,6 +109,84 @@ class AdminManagementAPITests(TestCase):
         self.assertEqual(update_response.status_code, status.HTTP_200_OK)
         self.assertFalse(update_response.data["is_active"])
 
+    def test_staff_can_manage_categories_and_customer_accounts(self):
+        self.authenticate(self.staff)
+        category_response = self.client.post(
+            "/api/admin/categories/",
+            {
+                "name": "Lenses",
+                "slug": "lenses",
+                "description": "Camera lenses",
+            },
+            format="json",
+        )
+        self.assertEqual(category_response.status_code, status.HTTP_201_CREATED)
+
+        password = "CustomerPass123!"
+        customer_response = self.client.post(
+            "/api/admin/customers/",
+            {
+                "username": "managed-customer",
+                "full_name": "Managed Customer",
+                "email": "managed-customer@example.com",
+                "password": password,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(customer_response.status_code, status.HTTP_201_CREATED)
+        self.assertNotIn("password", customer_response.data)
+        managed_customer = User.objects.get(email="managed-customer@example.com")
+        self.assertEqual(managed_customer.role, self.customer_role)
+        self.assertTrue(managed_customer.check_password(password))
+
+        update_response = self.client.patch(
+            f"/api/admin/customers/{managed_customer.pk}/",
+            {"is_active": False},
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertFalse(update_response.data["is_active"])
+
+    def test_staff_cannot_access_admin_only_business_features(self):
+        self.authenticate(self.staff)
+        for route in (
+            "/api/admin/employees/",
+            "/api/admin/statistics/",
+            "/api/admin/promotions/",
+            "/api/admin/discount-types/",
+        ):
+            with self.subTest(route=route):
+                response = self.client.get(route)
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_manage_employees_and_view_statistics(self):
+        self.authenticate(self.admin)
+        password = "EmployeePass123!"
+        create_response = self.client.post(
+            "/api/admin/employees/",
+            {
+                "username": "new-employee",
+                "full_name": "New Employee",
+                "email": "new-employee@example.com",
+                "password": password,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        employee = User.objects.get(email="new-employee@example.com")
+        self.assertEqual(employee.role, self.staff_role)
+        self.assertTrue(employee.is_staff)
+        self.assertFalse(employee.is_superuser)
+        self.assertTrue(employee.check_password(password))
+
+        statistics_response = self.client.get("/api/admin/statistics/")
+        self.assertEqual(statistics_response.status_code, status.HTTP_200_OK)
+        self.assertIn("revenue", statistics_response.data)
+        self.assertIn("order_status_counts", statistics_response.data)
+        self.assertEqual(statistics_response.data["employees"], 2)
+
     def test_staff_cannot_delete_resources(self):
         self.authenticate(self.staff)
         response = self.client.delete(

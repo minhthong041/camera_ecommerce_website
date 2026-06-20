@@ -1,11 +1,107 @@
 from django.db import transaction
+from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from accounts.models import User
-from catalog.models import Category, Product, ProductItem
+from accounts.models import Role, User
+from catalog.models import Brand, Category, Product, ProductItem
 from orders.models import ShippingMethod
 from payments.models import PaymentMethod
-from promotions.models import Promotion, PromotionCategory, PromotionUser
+from promotions.models import DiscountType, Promotion, PromotionCategory, PromotionUser
+
+
+class AdminBrandSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Brand
+        fields = ("id", "name", "logo_url")
+
+
+class AdminCategorySerializer(serializers.ModelSerializer):
+    parent_name = serializers.CharField(source="parent.name", read_only=True)
+
+    class Meta:
+        model = Category
+        fields = ("id", "parent", "parent_name", "name", "slug", "description")
+
+
+class AdminDiscountTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DiscountType
+        fields = ("id", "name")
+
+
+class ManagedUserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(
+        write_only=True,
+        required=False,
+        trim_whitespace=False,
+    )
+    role_name = serializers.CharField(source="role.name", read_only=True)
+    managed_role_name = None
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
+            "full_name",
+            "email",
+            "phone_number",
+            "dob",
+            "role_name",
+            "is_active",
+            "date_joined",
+            "last_login",
+            "password",
+        )
+        read_only_fields = ("id", "role_name", "date_joined", "last_login")
+        extra_kwargs = {
+            "username": {"required": False, "allow_null": True, "allow_blank": True},
+            "email": {"required": True, "allow_null": False, "allow_blank": False},
+            "phone_number": {
+                "required": False,
+                "allow_null": True,
+                "allow_blank": True,
+            },
+        }
+
+    def validate_password(self, value):
+        validate_password(value, user=self.instance)
+        return value
+
+    def validate(self, attrs):
+        if self.instance is None and not attrs.get("password"):
+            raise serializers.ValidationError({"password": "This field is required."})
+        return attrs
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        role = Role.objects.filter(name__iexact=self.managed_role_name).first()
+        if role is None:
+            raise serializers.ValidationError(
+                {"role": f"Role '{self.managed_role_name}' is not configured."}
+            )
+        user = User(role=role, **validated_data)
+        user.is_staff = self.managed_role_name == "staff"
+        user.is_superuser = False
+        user.set_password(password)
+        user.save()
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop("password", None)
+        instance = super().update(instance, validated_data)
+        if password:
+            instance.set_password(password)
+            instance.save(update_fields=("password",))
+        return instance
+
+
+class CustomerAccountSerializer(ManagedUserSerializer):
+    managed_role_name = "customer"
+
+
+class EmployeeAccountSerializer(ManagedUserSerializer):
+    managed_role_name = "staff"
 
 
 class AdminProductSerializer(serializers.ModelSerializer):
