@@ -1,6 +1,6 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Search, ShoppingCart, User, Heart, Phone, LogOut, ShieldCheck, Package, MapPin } from "lucide-react";
+import { Search, ShoppingCart, User, Heart, Phone, LogOut, ShieldCheck, Package, MapPin, Settings } from "lucide-react";
 import { useContext, useEffect, useRef, useState } from "react";
 import { AuthContext } from "../context/AuthContext";
 import cartApi from "../api/cartApi";
@@ -191,6 +191,11 @@ export default function Header() {
                       <Link to="/profile/addresses" onClick={() => setIsAccountMenuOpen(false)} className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-amber-50 hover:text-amber-600" role="menuitem">
                         <MapPin className="h-3.5 w-3.5" /> Sổ địa chỉ
                       </Link>
+                      {["admin", "staff"].includes(user.role_name?.toLowerCase()) && (
+                        <Link to="/admin/operations" onClick={() => setIsAccountMenuOpen(false)} className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-amber-50 hover:text-amber-600" role="menuitem">
+                          <Settings className="h-3.5 w-3.5" /> Vận hành
+                        </Link>
+                      )}
                       <hr className="my-1 border-gray-100" />
                       <button
                         onClick={() => {

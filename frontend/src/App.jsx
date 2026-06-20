@@ -22,6 +22,8 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import AccountSecurityPage from "./pages/AccountSecurityPage";
 import AddressManagementPage from "./pages/AddressManagementPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
+import StaffRoute from "./components/StaffRoute";
+import AdminOperationsPage from "./pages/AdminOperationsPage";
 
 export default function App() {
   return (
@@ -96,6 +98,14 @@ export default function App() {
               <ProtectedRoute>
                 <AddressManagementPage />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/operations"
+            element={
+              <StaffRoute>
+                <AdminOperationsPage />
+              </StaffRoute>
             }
           />
           <Route
