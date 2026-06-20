@@ -31,6 +31,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         )
         read_only_fields = (
             "id",
+            "username",
             "role",
             "role_name",
             "date_joined",
@@ -38,7 +39,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "is_active",
         )
         extra_kwargs = {
-            "username": {"validators": [], "required": False, "allow_blank": True},
             "email": {"validators": [], "required": False, "allow_blank": True},
             "phone_number": {
                 "validators": [],

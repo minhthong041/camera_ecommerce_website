@@ -88,3 +88,46 @@ class OrderLine(models.Model):
 
     def __str__(self):
         return f"{self.order} - {self.product_item}"
+
+
+class ReturnRequestStatus(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+
+    class Meta:
+        db_table = "return_request_statuses"
+        verbose_name = "return request status"
+        verbose_name_plural = "return request statuses"
+
+    def __str__(self):
+        return self.name
+
+
+class ReturnRequest(models.Model):
+
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.PROTECT,
+        related_name="return_requests",
+    )
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.PROTECT,
+        related_name="return_requests",
+    )
+    reason = models.TextField()
+    status = models.ForeignKey(
+        ReturnRequestStatus,
+        on_delete=models.PROTECT,
+        related_name="return_requests",
+        db_column="status",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "return_requests"
+        verbose_name = "return request"
+        verbose_name_plural = "return requests"
+        ordering = ("-created_at", "-id")
+
+    def __str__(self):
+        return f"Return #{self.pk} - {self.order.order_code}"

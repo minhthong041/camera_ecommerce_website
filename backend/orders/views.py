@@ -3,11 +3,12 @@ from decimal import Decimal
 from uuid import uuid4
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import generics, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.exceptions import APIException, NotFound, ValidationError
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ReadOnlyModelViewSet
@@ -15,19 +16,39 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from cart.models import CartItem, ShoppingCart
 from catalog.models import ProductItem
 from locations.models import Address
+from payments.gateways import initialize_payment_gateway, normalize_provider_name
+from payments.models import Payment, PaymentMethod, PaymentStatus
 from promotions.models import Promotion
+from admin_dashboard.permissions import IsAdminRole, IsStaffRole
 
-from .models import Order, OrderLine, OrderStatus, ShippingMethod
+from .models import (
+    Order,
+    OrderLine,
+    OrderStatus,
+    ReturnRequest,
+    ReturnRequestStatus,
+    ShippingMethod,
+)
 from .serializers import (
     CheckoutSerializer,
     OrderDetailSerializer,
     OrderSerializer,
     OrderStatusUpdateSerializer,
+    ReturnRequestCreateSerializer,
+    ReturnRequestSerializer,
+    ReturnRequestStatusUpdateSerializer,
+    ShippingMethodSerializer,
+)
+from .state_machine import (
+    CUSTOMER_CANCELLABLE_STATUSES,
+    RESTOCKED_ORDER_STATUSES,
+    allowed_admin_transitions,
+    is_admin_transition_allowed,
+    normalize_status_name,
 )
 
 
 MONEY_QUANTIZER = Decimal("0.01")
-RESTOCKED_ORDER_STATUSES = {"cancelled", "refunded"}
 
 
 def get_configured_order_status(status_name):
@@ -37,6 +58,58 @@ def get_configured_order_status(status_name):
             {"status": f"Order status '{status_name}' is not configured."}
         )
     return order_status
+
+
+def get_configured_return_request_status(status_name):
+    return_status = ReturnRequestStatus.objects.filter(
+        name__iexact=status_name
+    ).first()
+    if return_status is None:
+        raise ValidationError(
+            {
+                "status": (
+                    f"Return request status '{status_name}' is not configured."
+                )
+            }
+        )
+    return return_status
+
+
+def sync_cod_payment_status(order, order_status_name):
+    payment_status_by_order_status = {
+        "cancelled": "failed",
+        "delivered": "paid",
+    }
+    payment_status_name = payment_status_by_order_status.get(order_status_name)
+    if payment_status_name is None:
+        return
+
+    cod_payment = (
+        Payment.objects.select_for_update()
+        .filter(
+            order=order,
+            payment_method__name__iexact="cod",
+            status__name__iexact="pending",
+        )
+        .first()
+    )
+    if cod_payment is None:
+        return
+
+    payment_status = PaymentStatus.objects.filter(
+        name__iexact=payment_status_name
+    ).first()
+    if payment_status is None:
+        raise ValidationError(
+            {
+                "payment_status": (
+                    f"Payment status '{payment_status_name}' is not configured."
+                )
+            }
+        )
+
+    cod_payment.status = payment_status
+    cod_payment.save(update_fields=("status", "updated_at"))
 
 
 def restore_order_stock(order):
@@ -78,6 +151,137 @@ def optimized_order_queryset():
         .prefetch_related("lines__product_item__product")
         .order_by("-created_at", "-id")
     )
+
+
+class ShippingMethodListAPIView(generics.ListAPIView):
+    queryset = ShippingMethod.objects.order_by("price", "id")
+    serializer_class = ShippingMethodSerializer
+    permission_classes = (AllowAny,)
+
+
+def optimized_return_request_queryset():
+    return ReturnRequest.objects.select_related(
+        "user",
+        "status",
+        "order",
+        "order__status",
+    ).order_by("-created_at", "-id")
+
+
+class ReturnRequestListCreateAPIView(generics.ListCreateAPIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        return optimized_return_request_queryset().filter(user=self.request.user)
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return ReturnRequestCreateSerializer
+        return ReturnRequestSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return_request = serializer.save()
+        output_serializer = ReturnRequestSerializer(
+            return_request,
+            context=self.get_serializer_context(),
+        )
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class AdminReturnRequestListAPIView(generics.ListAPIView):
+    serializer_class = ReturnRequestSerializer
+    permission_classes = (IsAuthenticated, IsAdminRole | IsStaffRole)
+    queryset = optimized_return_request_queryset()
+
+
+class AdminReturnRequestStatusAPIView(generics.GenericAPIView):
+    serializer_class = ReturnRequestStatusUpdateSerializer
+    permission_classes = (IsAuthenticated, IsAdminRole | IsStaffRole)
+
+    def patch(self, request, pk, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        requested_status = serializer.validated_data["status"]
+
+        with transaction.atomic():
+            return_request = (
+                ReturnRequest.objects.select_for_update()
+                .select_related("status", "order", "order__status", "user")
+                .filter(pk=pk)
+                .first()
+            )
+            if return_request is None:
+                raise NotFound("Return request does not exist.")
+
+            if return_request.status.name.strip().lower() != "pending":
+                raise ValidationError(
+                    {"status": "Only pending return requests can be processed."}
+                )
+
+            new_return_status = get_configured_return_request_status(
+                requested_status
+            )
+            if requested_status == "approved":
+                self.approve_return(return_request, new_return_status)
+            else:
+                return_request.status = new_return_status
+                return_request.save(update_fields=("status",))
+
+        return_request = optimized_return_request_queryset().get(pk=return_request.pk)
+        return Response(
+            ReturnRequestSerializer(return_request).data,
+            status=status.HTTP_200_OK,
+        )
+
+    @staticmethod
+    def approve_return(return_request, approved_return_status):
+        refunded_order_status = get_configured_order_status("refunded")
+        refunded_payment_status = PaymentStatus.objects.filter(
+            name__iexact="refunded"
+        ).first()
+        if refunded_payment_status is None:
+            raise ValidationError(
+                {"payment_status": "Refunded payment status is not configured."}
+            )
+
+        payment = (
+            Payment.objects.select_for_update()
+            .select_related("status")
+            .filter(order_id=return_request.order_id)
+            .filter(
+                Q(status__name__iexact="paid")
+                | Q(status__name__iexact="completed")
+            )
+            .order_by("-created_at", "-id")
+            .first()
+        )
+        if payment is None:
+            raise ValidationError(
+                {"payment": "This order has no refundable payment."}
+            )
+
+        order = (
+            Order.objects.select_for_update()
+            .select_related("status")
+            .get(pk=return_request.order_id)
+        )
+        if order.status.name.strip().lower() != "delivered":
+            raise ValidationError(
+                {"order": "Only delivered orders can be approved for return."}
+            )
+
+        restore_order_stock(order)
+
+        payment.status = refunded_payment_status
+        payment.save(update_fields=("status", "updated_at"))
+
+        order.status = refunded_order_status
+        order.save(update_fields=("status",))
+
+        return_request.status = approved_return_status
+        return_request.save(update_fields=("status",))
 
 
 class CheckoutAPIView(APIView):
@@ -149,7 +353,7 @@ class CheckoutAPIView(APIView):
                 Decimal("0.00"),
             ).quantize(MONEY_QUANTIZER)
 
-            # Step 5 - Fetch shipping method and add shipping fee.
+            # Step 5 - Fetch checkout options from trusted lookup tables.
             shipping_method = ShippingMethod.objects.filter(
                 pk=checkout_data["shipping_method_id"]
             ).first()
@@ -182,6 +386,24 @@ class CheckoutAPIView(APIView):
                     }
                 )
 
+            payment_method = PaymentMethod.objects.filter(
+                pk=checkout_data["payment_method_id"]
+            ).first()
+            if payment_method is None:
+                raise ValidationError(
+                    {"payment_method_id": "Payment method does not exist."}
+                )
+
+            provider_name = normalize_provider_name(payment_method.name)
+            if provider_name not in {"cod", "vnpay", "stripe"}:
+                raise ValidationError(
+                    {
+                        "payment_method_id": (
+                            "Only COD, VNPay, and Stripe are currently supported."
+                        )
+                    }
+                )
+
             shipping_fee = shipping_method.price.quantize(MONEY_QUANTIZER)
 
             # Step 6 - Apply promotion, if provided.
@@ -196,11 +418,29 @@ class CheckoutAPIView(APIView):
                 subtotal + shipping_fee - discount_amount
             ).quantize(MONEY_QUANTIZER)
 
-            # Step 7 - Create order with Pending status and a unique order code.
+            # Step 7 - Create the order and its initial payment atomically.
             pending_status = OrderStatus.objects.filter(name__iexact="pending").first()
             if pending_status is None:
                 raise ValidationError(
                     {"status": "Pending order status is not configured."}
+                )
+
+            initial_order_status = pending_status
+            if provider_name == "cod":
+                initial_order_status = OrderStatus.objects.filter(
+                    name__iexact="confirmed"
+                ).first()
+                if initial_order_status is None:
+                    raise ValidationError(
+                        {"status": "Confirmed order status is not configured."}
+                    )
+
+            pending_payment_status = PaymentStatus.objects.filter(
+                name__iexact="pending"
+            ).first()
+            if pending_payment_status is None:
+                raise ValidationError(
+                    {"payment_status": "Pending payment status is not configured."}
                 )
 
             order = Order.objects.create(
@@ -210,7 +450,14 @@ class CheckoutAPIView(APIView):
                 shipping_address=shipping_address,
                 promotion=promotion,
                 total_amount=total_amount,
-                status=pending_status,
+                status=initial_order_status,
+            )
+
+            payment = Payment.objects.create(
+                order=order,
+                payment_method=payment_method,
+                amount=total_amount,
+                status=pending_payment_status,
             )
 
             # Step 8 - Create order lines and deduct stock from locked rows.
@@ -251,8 +498,29 @@ class CheckoutAPIView(APIView):
                 .get(pk=order.pk)
             )
 
-            response_serializer = OrderSerializer(order)
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        response_data = OrderSerializer(order).data
+        payment_data = {
+            "id": payment.pk,
+            "provider": provider_name,
+            "amount": str(payment.amount),
+            "status": payment.status.name,
+            "requires_action": provider_name != "cod",
+        }
+
+        if provider_name != "cod":
+            try:
+                _, gateway_data = initialize_payment_gateway(request, payment)
+                payment_data.update(gateway_data)
+            except APIException as exc:
+                payment_data.update(
+                    {
+                        "gateway_error": exc.detail,
+                        "retry_url": f"/api/payments/{payment.pk}/initialize/",
+                    }
+                )
+
+        response_data["payment"] = payment_data
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
     def get_valid_promotion(self, promotion_code, subtotal):
         try:
@@ -342,8 +610,8 @@ class CustomerOrderViewSet(ReadOnlyModelViewSet):
             if order is None:
                 raise NotFound("Order does not exist.")
 
-            current_status = order.status.name.strip().lower()
-            if current_status not in {"pending", "confirmed"}:
+            current_status = normalize_status_name(order.status.name)
+            if current_status not in CUSTOMER_CANCELLABLE_STATUSES:
                 raise ValidationError(
                     {
                         "status": (
@@ -355,6 +623,7 @@ class CustomerOrderViewSet(ReadOnlyModelViewSet):
 
             cancelled_status = get_configured_order_status("cancelled")
             restore_order_stock(order)
+            sync_cod_payment_status(order, "cancelled")
             order.status = cancelled_status
             order.save(update_fields=("status",))
 
@@ -364,7 +633,7 @@ class CustomerOrderViewSet(ReadOnlyModelViewSet):
 
 class AdminOrderViewSet(ReadOnlyModelViewSet):
     serializer_class = OrderDetailSerializer
-    permission_classes = (IsAdminUser,)
+    permission_classes = (IsAuthenticated, IsAdminRole | IsStaffRole)
 
     def get_queryset(self):
         queryset = optimized_order_queryset()
@@ -394,7 +663,7 @@ class AdminOrderViewSet(ReadOnlyModelViewSet):
             if order is None:
                 raise NotFound("Order does not exist.")
 
-            current_status_name = order.status.name.strip().lower()
+            current_status_name = normalize_status_name(order.status.name)
             if current_status_name == new_status_name:
                 order = self.get_queryset().get(pk=order.pk)
                 return Response(
@@ -402,13 +671,20 @@ class AdminOrderViewSet(ReadOnlyModelViewSet):
                     status=status.HTTP_200_OK,
                 )
 
-            if current_status_name in RESTOCKED_ORDER_STATUSES:
+            if not is_admin_transition_allowed(
+                current_status_name,
+                new_status_name,
+            ):
+                allowed_statuses = sorted(
+                    allowed_admin_transitions(current_status_name)
+                )
+                allowed_message = ", ".join(allowed_statuses) or "none"
                 raise ValidationError(
                     {
                         "status": (
-                            f"An order in '{current_status_name}' status cannot "
-                            "be moved to another status because its stock has "
-                            "already been restored."
+                            f"Order status cannot change from "
+                            f"'{current_status_name}' to '{new_status_name}'. "
+                            f"Allowed next statuses: {allowed_message}."
                         )
                     }
                 )
@@ -416,6 +692,8 @@ class AdminOrderViewSet(ReadOnlyModelViewSet):
             new_status = get_configured_order_status(new_status_name)
             if new_status_name in RESTOCKED_ORDER_STATUSES:
                 restore_order_stock(order)
+
+            sync_cod_payment_status(order, new_status_name)
 
             order.status = new_status
             order.save(update_fields=("status",))

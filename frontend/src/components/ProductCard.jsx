@@ -1,43 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useContext } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, Link } from 'react-router-dom';
 import { Eye, Heart, ShoppingCart } from 'lucide-react';
+import wishlistApi from '../api/wishlistApi';
+import { AuthContext } from '../context/AuthContext';
 
 export default function ProductCard({ product }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { user } = useContext(AuthContext);
 
-  // Khởi tạo state bằng callback để không gây render tuần hoàn (Sạch lỗi ESLint)
-  const [isFavorite, setIsFavorite] = useState(() => {
-    const local = JSON.parse(localStorage.getItem('wishlist_local')) || [];
-    return local.some(item => item.id === product?.id);
-  });
-
-  useEffect(() => {
-    const syncFavoriteState = () => {
-      const local = JSON.parse(localStorage.getItem('wishlist_local')) || [];
-      setIsFavorite(local.some(item => item.id === product?.id));
-    };
-    window.addEventListener('wishlistUpdated', syncFavoriteState);
-    return () => window.removeEventListener('wishlistUpdated', syncFavoriteState);
-  }, [product?.id]);
-
-  const toggleFavorite = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    let local = JSON.parse(localStorage.getItem('wishlist_local')) || [];
-    const exists = local.some(item => item.id === product.id);
-
-    if (exists) {
-      local = local.filter(item => item.id !== product.id);
-      setIsFavorite(false);
-    } else {
-      local.push(product);
-      setIsFavorite(true);
-    }
-    localStorage.setItem('wishlist_local', JSON.stringify(local));
-    window.dispatchEvent(new Event('wishlistUpdated'));
-  };
-
-  const items = product?.items || [];
+  const items = product?.items || product?.product_items || [];
   const availableItems = items.filter((item) => Number(item.qty_in_stock) > 0);
   const displayItems = availableItems.length > 0 ? availableItems : items;
   const primaryItem = displayItems[0] || {};
@@ -48,6 +21,35 @@ export default function ProductCard({ product }) {
   const stockQuantity = items.reduce((total, item) => total + (Number(item.qty_in_stock) || 0), 0);
   const brandName = product?.brand?.name || product?.brand_name || 'Chính hãng';
 
+  const { data: wishlist = [] } = useQuery({
+    queryKey: ['wishlist'],
+    queryFn: wishlistApi.getWishlist,
+    enabled: Boolean(user),
+    staleTime: 30_000,
+  });
+
+  const isFavorite = Boolean(user) && wishlist.some(
+    (entry) => entry.product_item_id === primaryItem.id,
+  );
+
+  const favoriteMutation = useMutation({
+    mutationFn: () =>
+      isFavorite
+        ? wishlistApi.removeItem(primaryItem.id)
+        : wishlistApi.addItem(primaryItem.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['wishlist'] }),
+  });
+
+  const toggleFavorite = () => {
+    if (!user) {
+      navigate('/login', { state: { from: `/products/${product?.id}` } });
+      return;
+    }
+    if (primaryItem.id && !favoriteMutation.isPending) {
+      favoriteMutation.mutate();
+    }
+  };
+
   const formatVND = (value) => {
     if (value === undefined || value === null) return 'Liên hệ';
     const numericValue = Number(value);
@@ -57,11 +59,12 @@ export default function ProductCard({ product }) {
 
   return (
     <div className="group bg-white rounded-2xl border border-gray-100 p-3 flex flex-col justify-between hover:shadow-xl hover:border-amber-500/20 transition-all duration-300 relative overflow-hidden">
-      
       {/* NÚT FAVORITE TRÊN PRODUCT CARD */}
-      <button 
+      <button
         onClick={toggleFavorite}
         type="button"
+        disabled={!primaryItem.id || favoriteMutation.isPending}
+        aria-label={isFavorite ? 'Xóa khỏi yêu thích' : 'Thêm vào yêu thích'}
         className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/80 backdrop-blur-sm border border-gray-100 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-white shadow-sm transition-all"
       >
         <Heart className={`w-4 h-4 transition-transform active:scale-125 ${isFavorite ? 'text-red-500 fill-red-500' : ''}`} />

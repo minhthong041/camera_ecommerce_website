@@ -1,46 +1,37 @@
-import { useState, useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Heart, Trash2, ArrowLeft } from 'lucide-react';
 import wishlistApi from '../api/wishlistApi';
 import ProductCard from '../components/ProductCard';
 
 export default function WishlistPage() {
-  const [wishlist, setWishlist] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { data: wishlist = [], isLoading, isError } = useQuery({
+    queryKey: ['wishlist'],
+    queryFn: wishlistApi.getWishlist,
+  });
 
-  // Hàm fetch danh sách yêu thích từ API thật
-  const fetchWishlist = () => {
-    wishlistApi.getWishlist()
-      .then((res) => {
-        // Hỗ trợ nếu API trả trực tiếp mảng hoặc bọc trong thuộc tính data
-        const data = res.data || res;
-        setWishlist(Array.isArray(data) ? data : []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error('Lỗi lấy danh sách yêu thích:', err);
-        setLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    fetchWishlist();
-
-    // Lắng nghe sự kiện click tim thay đổi từ các page khác để sync trực tiếp
-    window.addEventListener('wishlistUpdated', fetchWishlist);
-    return () => window.removeEventListener('wishlistUpdated', fetchWishlist);
-  }, []);
+  const clearMutation = useMutation({
+    mutationFn: () =>
+      Promise.all(
+        wishlist.map((entry) => wishlistApi.removeItem(entry.product_item_id)),
+      ),
+    onSuccess: () => queryClient.setQueryData(['wishlist'], []),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['wishlist'] }),
+  });
 
   const clearAllWishlist = () => {
     if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ danh sách yêu thích không?')) {
-      localStorage.setItem('wishlist_local', JSON.stringify([]));
-      setWishlist([]);
-      window.dispatchEvent(new Event('wishlistUpdated'));
+      clearMutation.mutate();
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return <div className="text-center py-20 text-sm text-gray-500">Đang tải danh sách yêu thích...</div>;
+  }
+
+  if (isError) {
+    return <div className="text-center py-20 text-sm font-medium text-red-500">Không thể tải danh sách yêu thích. Vui lòng thử lại.</div>;
   }
 
   // --- 2. EMPTY STATE ---
@@ -76,19 +67,33 @@ export default function WishlistPage() {
           </h1>
           <p className="text-xs text-gray-400 mt-1">Đang kết nối dữ liệu máy ảnh ({wishlist.length})</p>
         </div>
-        
+
         <button
           onClick={clearAllWishlist}
+          disabled={clearMutation.isPending}
           className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors self-start sm:self-auto"
         >
-          <Trash2 className="w-4 h-4" /> Xóa tất cả
+          <Trash2 className="w-4 h-4" />
+          {clearMutation.isPending ? 'Đang xóa...' : 'Xóa tất cả'}
         </button>
       </div>
 
+      {clearMutation.isError && (
+        <p className="mb-4 text-sm font-medium text-red-500" role="alert">
+          Một số sản phẩm chưa thể xóa. Danh sách đã được tải lại.
+        </p>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {wishlist.map((product) => (
-          <ProductCard key={product.id} product={product} />
-        ))}
+        {wishlist.map((entry) => {
+          const item = entry.product_item;
+          const product = {
+            id: item.product_id,
+            name: item.product_name,
+            items: [item],
+          };
+          return <ProductCard key={entry.product_item_id} product={product} />;
+        })}
       </div>
     </div>
   );
