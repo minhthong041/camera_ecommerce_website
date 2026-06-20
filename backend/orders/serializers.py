@@ -159,12 +159,14 @@ class ShippingMethodSerializer(serializers.ModelSerializer):
 
 
 class ProductItemSummarySerializer(serializers.ModelSerializer):
+    product_id = serializers.IntegerField(read_only=True)
     product_name = serializers.CharField(source="product.name", read_only=True)
 
     class Meta:
         model = ProductItem
         fields = (
             "id",
+            "product_id",
             "sku",
             "product_name",
             "price",
@@ -183,6 +185,7 @@ class OrderLineSerializer(serializers.ModelSerializer):
         read_only=True,
     )
     line_total = serializers.SerializerMethodField()
+    review = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderLine
@@ -195,11 +198,24 @@ class OrderLineSerializer(serializers.ModelSerializer):
             "price",
             "quantity",
             "line_total",
+            "review",
         )
         read_only_fields = fields
 
     def get_line_total(self, obj):
         return obj.price * obj.quantity
+
+    def get_review(self, obj):
+        review = getattr(obj, "review", None)
+        if review is None:
+            return None
+        return {
+            "id": review.id,
+            "rating": review.rating,
+            "comment": review.comment,
+            "is_visible": review.is_visible,
+            "created_at": review.created_at,
+        }
 
 
 class OrderSerializer(serializers.ModelSerializer):

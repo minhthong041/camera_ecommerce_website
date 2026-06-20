@@ -26,7 +26,8 @@ class ProductReviewListAPIView(ListAPIView):
     def get_queryset(self):
         return (
             Review.objects.filter(
-                product_item__product_id=self.kwargs["product_id"]
+                product_item__product_id=self.kwargs["product_id"],
+                is_visible=True,
             )
             .select_related(
                 "user",

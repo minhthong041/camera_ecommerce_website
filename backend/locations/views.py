@@ -76,10 +76,17 @@ class WardViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = (AllowAny,)
 
     def get_queryset(self):
-        queryset = Ward.objects.select_related("district").order_by("name")
+        queryset = Ward.objects.select_related(
+            "district",
+            "district__city",
+            "district__city__province",
+        ).order_by("name")
         district_id = get_integer_query_param(self.request, "district_id")
+        province_id = get_integer_query_param(self.request, "province_id")
         if district_id is not None:
             queryset = queryset.filter(district_id=district_id)
+        if province_id is not None:
+            queryset = queryset.filter(district__city__province_id=province_id)
         return queryset
 
 

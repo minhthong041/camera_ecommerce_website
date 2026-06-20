@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from accounts.models import User
+from accounts.models import Role, User
 from catalog.models import Brand, Category, Product, ProductItem
 from locations.models import Address, City, Country, District, Province, Ward
 from orders.models import Order, OrderLine, OrderStatus, ShippingMethod
@@ -14,6 +14,20 @@ from .models import Review
 class ReviewAPITests(TestCase):
     @classmethod
     def setUpTestData(cls):
+        cls.admin_role = Role.objects.create(name="admin")
+        cls.staff_role = Role.objects.create(name="staff")
+        cls.admin = User.objects.create_user(
+            username="review-admin",
+            full_name="Review Admin",
+            password="StrongPassword123!",
+            role=cls.admin_role,
+        )
+        cls.staff = User.objects.create_user(
+            username="review-staff",
+            full_name="Review Staff",
+            password="StrongPassword123!",
+            role=cls.staff_role,
+        )
         cls.customer = User.objects.create_user(
             username="customer",
             email="customer@example.com",
@@ -72,7 +86,7 @@ class ReviewAPITests(TestCase):
         cls.delivered_status = OrderStatus.objects.create(name="delivered")
         cls.pending_status = OrderStatus.objects.create(name="pending")
 
-        customer_delivered_order = cls.create_order(
+        cls.customer_delivered_order = cls.create_order(
             user=cls.customer,
             status=cls.delivered_status,
             order_code="ORD-CUSTOMER-DELIVERED",
@@ -89,11 +103,11 @@ class ReviewAPITests(TestCase):
         )
 
         cls.customer_line = cls.create_order_line(
-            customer_delivered_order,
+            cls.customer_delivered_order,
             cls.product_item,
         )
         cls.customer_second_line = cls.create_order_line(
-            customer_delivered_order,
+            cls.customer_delivered_order,
             cls.product_item,
         )
         cls.pending_line = cls.create_order_line(
@@ -175,6 +189,16 @@ class ReviewAPITests(TestCase):
             self.customer.full_name,
         )
 
+    def test_hidden_reviews_are_excluded_from_public_product_reviews(self):
+        self.other_review.is_visible = False
+        self.other_review.save(update_fields=("is_visible",))
+
+        response = self.client.get(f"/api/products/{self.product.pk}/reviews/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 0)
+        self.assertEqual(response.data["average_rating"], 0.0)
+
     def test_create_review_for_delivered_owned_order_line(self):
         self.authenticate_customer()
 
@@ -193,6 +217,17 @@ class ReviewAPITests(TestCase):
         self.assertEqual(review.user, self.customer)
         self.assertEqual(review.product_item, self.customer_line.product_item)
         self.assertEqual(response.data["product_item"]["id"], self.product_item.pk)
+
+        order_response = self.client.get(
+            f"/api/orders/{self.customer_delivered_order.pk}/"
+        )
+        reviewed_line = next(
+            line
+            for line in order_response.data["order_lines"]
+            if line["id"] == self.customer_line.pk
+        )
+        self.assertEqual(reviewed_line["review"]["id"], review.pk)
+        self.assertEqual(reviewed_line["review"]["rating"], 4)
 
     def test_cannot_review_another_users_order_line(self):
         self.authenticate_customer()
@@ -338,3 +373,45 @@ class ReviewAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, 401)
+
+    def test_staff_can_hide_review_but_cannot_delete_it(self):
+        self.client.force_authenticate(user=self.staff)
+
+        update_response = self.client.patch(
+            f"/api/admin/reviews/{self.other_review.pk}/",
+            {"is_visible": False},
+            format="json",
+        )
+        delete_response = self.client.delete(
+            f"/api/admin/reviews/{self.other_review.pk}/"
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertFalse(update_response.data["is_visible"])
+        self.assertEqual(delete_response.status_code, 403)
+        self.assertTrue(Review.objects.filter(pk=self.other_review.pk).exists())
+
+    def test_admin_can_filter_and_delete_reviews(self):
+        self.client.force_authenticate(user=self.admin)
+
+        list_response = self.client.get(
+            "/api/admin/reviews/",
+            {"rating": 5, "visibility": "visible", "search": "Test Camera"},
+        )
+        delete_response = self.client.delete(
+            f"/api/admin/reviews/{self.other_review.pk}/"
+        )
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(len(list_response.data), 1)
+        self.assertEqual(list_response.data[0]["order_code"], "ORD-OTHER-DELIVERED")
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertFalse(Review.objects.filter(pk=self.other_review.pk).exists())
+
+    def test_admin_review_filter_rejects_invalid_rating(self):
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.get("/api/admin/reviews/", {"rating": "invalid"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(str(response.data["rating"]), "Rating must be an integer.")
