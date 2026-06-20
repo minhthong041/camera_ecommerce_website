@@ -1,0 +1,8 @@
+<!doctype html>
+<html><body style="font-family:Arial,sans-serif;color:#1f2937">
+  <h2>Welcome to CameraShop</h2>
+  <p>Hello {{ user.full_name|default:user.username }},</p>
+  <p>Your CameraShop account has been created successfully.</p>
+  <p><a href="{{ login_url }}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 18px;text-decoration:none;border-radius:6px">Sign in</a></p>
+  <p style="color:#6b7280;font-size:13px">If you did not create this account, please contact CameraShop support.</p>
+</body></html>

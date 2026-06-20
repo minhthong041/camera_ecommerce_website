@@ -53,6 +53,31 @@ class AccountSecurityAPITests(TestCase):
     def authenticate_user(self):
         self.client.force_authenticate(user=self.user)
 
+    def test_register_sends_welcome_email_and_hashes_password(self):
+        password = "NewCustomerPassword123!"
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                "/api/auth/register/",
+                {
+                    "username": "new-customer",
+                    "full_name": "New Customer",
+                    "email": "new-customer@example.com",
+                    "phone_number": "0900000010",
+                    "password": password,
+                    "password_confirm": password,
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertNotIn("password", response.data)
+        user = User.objects.get(email="new-customer@example.com")
+        self.assertTrue(user.check_password(password))
+        self.assertNotEqual(user.password, password)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [user.email])
+        self.assertIn("created successfully", mail.outbox[0].body)
+
     def request_password_reset_token(self):
         response = self.client.post(
             "/api/auth/password-reset/",

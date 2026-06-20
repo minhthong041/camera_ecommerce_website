@@ -1,0 +1,7 @@
+Hello {{ user.full_name|default:user.username }},
+
+Your CameraShop account has been created successfully.
+
+Sign in: {{ login_url }}
+
+If you did not create this account, please contact CameraShop support.

@@ -208,8 +208,8 @@ DEFAULT_FROM_EMAIL=CameraShop <no-reply@example.com>
 FRONTEND_BASE_URL=http://localhost:5173
 ```
 
-Hệ thống gửi email reset mật khẩu, OTP, xác nhận/cập nhật đơn hàng và trạng thái
-yêu cầu đổi trả. Không commit tài khoản hoặc mật khẩu SMTP vào Git.
+Hệ thống gửi email đăng ký thành công, reset mật khẩu, OTP, xác nhận/cập nhật đơn
+hàng và trạng thái yêu cầu đổi trả. Không commit tài khoản hoặc mật khẩu SMTP vào Git.
 
 ## Continuous Integration
 

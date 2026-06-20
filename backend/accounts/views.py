@@ -27,7 +27,11 @@ from .serializers import (
     build_token_response,
     password_reset_token_generator,
 )
-from .emails import send_email_otp, send_password_reset_email
+from .emails import (
+    schedule_registration_email,
+    send_email_otp,
+    send_password_reset_email,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -73,6 +77,7 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        schedule_registration_email(user.pk)
         return Response(build_token_response(user), status=status.HTTP_201_CREATED)
 
 

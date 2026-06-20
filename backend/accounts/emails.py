@@ -1,8 +1,32 @@
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.db import transaction
 
 from core.emailing import send_templated_email
+
+from .models import User
+
+
+def send_registration_email(user):
+    return send_templated_email(
+        subject="Welcome to CameraShop",
+        recipient=user.email,
+        template_name="registration_success",
+        context={
+            "user": user,
+            "login_url": f"{settings.FRONTEND_BASE_URL.rstrip('/')}/login",
+        },
+    )
+
+
+def schedule_registration_email(user_id):
+    def deliver():
+        user = User.objects.filter(pk=user_id, is_active=True).first()
+        if user:
+            send_registration_email(user)
+
+    transaction.on_commit(deliver)
 
 
 def send_password_reset_email(user, token):
