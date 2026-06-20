@@ -1,5 +1,8 @@
 from django.contrib import admin
 
+from inventory.models import InventoryLedgerEntry
+from inventory.services import record_initial_stock
+
 from .models import (
     Brand,
     Category,
@@ -40,6 +43,31 @@ class ProductItemAdmin(admin.ModelAdmin):
     list_filter = ("condition", "product__brand", "product__category")
     search_fields = ("sku", "product__name")
     list_select_related = ("product",)
+
+    def save_model(self, request, obj, form, change):
+        quantity_before = 0
+        if change:
+            quantity_before = ProductItem.objects.only("qty_in_stock").get(
+                pk=obj.pk
+            ).qty_in_stock
+
+        super().save_model(request, obj, form, change)
+
+        if not change:
+            record_initial_stock(product_item=obj, actor=request.user)
+            return
+
+        quantity_change = obj.qty_in_stock - quantity_before
+        if quantity_change:
+            InventoryLedgerEntry.objects.create(
+                product_item=obj,
+                actor=request.user,
+                reason=InventoryLedgerEntry.Reason.MANUAL_ADJUSTMENT,
+                quantity_change=quantity_change,
+                quantity_before=quantity_before,
+                quantity_after=obj.qty_in_stock,
+                note="Stock adjusted through Django admin.",
+            )
 
 
 @admin.register(Variation)

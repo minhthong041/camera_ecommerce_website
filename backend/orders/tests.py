@@ -19,6 +19,7 @@ from locations.models import (
     UserAddress,
     Ward,
 )
+from inventory.models import InventoryLedgerEntry
 from payments.gateways import GatewayConfigurationError
 from payments.models import Payment, PaymentMethod, PaymentStatus
 
@@ -190,6 +191,12 @@ class OrderManagementAPITests(TestCase):
         self.product_item.refresh_from_db()
         self.assertEqual(order.status.name, "cancelled")
         self.assertEqual(self.product_item.qty_in_stock, 7)
+        ledger_entry = InventoryLedgerEntry.objects.get(
+            order=order,
+            product_item=self.product_item,
+        )
+        self.assertEqual(ledger_entry.reason, "order_cancelled")
+        self.assertEqual(ledger_entry.quantity_change, 2)
 
     def test_customer_cannot_cancel_shipping_order(self):
         order = self.create_order(status_name="shipping")
@@ -357,6 +364,14 @@ class OrderManagementAPITests(TestCase):
         )
         self.assertFalse(CartItem.objects.filter(cart=cart).exists())
         self.assertEqual(self.product_item.qty_in_stock, 3)
+        ledger_entry = InventoryLedgerEntry.objects.get(
+            order=order,
+            product_item=self.product_item,
+        )
+        self.assertEqual(ledger_entry.reason, "checkout")
+        self.assertEqual(ledger_entry.quantity_change, -2)
+        self.assertEqual(ledger_entry.quantity_before, 5)
+        self.assertEqual(ledger_entry.quantity_after, 3)
 
     @patch("orders.views.initialize_payment_gateway")
     def test_cod_checkout_confirms_order_without_gateway_action(self, initialize):

@@ -1,4 +1,3 @@
-from collections import defaultdict
 from decimal import Decimal
 from uuid import uuid4
 
@@ -16,6 +15,13 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from cart.models import CartItem, ShoppingCart
 from catalog.models import ProductItem
 from locations.models import Address
+from inventory.models import InventoryLedgerEntry
+from inventory.services import (
+    InventoryError,
+    StockChange,
+    apply_locked_stock_changes,
+    restore_order_stock,
+)
 from payments.gateways import initialize_payment_gateway, normalize_provider_name
 from payments.models import Payment, PaymentMethod, PaymentStatus
 from promotions.services import PromotionLine, PromotionRuleError, quote_promotion
@@ -112,33 +118,6 @@ def sync_cod_payment_status(order, order_status_name):
     cod_payment.save(update_fields=("status", "updated_at"))
 
 
-def restore_order_stock(order):
-    quantities_by_product_item = defaultdict(int)
-    for product_item_id, quantity in order.lines.values_list(
-        "product_item_id",
-        "quantity",
-    ):
-        quantities_by_product_item[product_item_id] += quantity
-
-    if not quantities_by_product_item:
-        return
-
-    product_items = list(
-        ProductItem.objects.select_for_update()
-        .filter(pk__in=quantities_by_product_item)
-        .order_by("pk")
-    )
-    if len(product_items) != len(quantities_by_product_item):
-        raise ValidationError(
-            {"order_lines": "One or more product items no longer exist."}
-        )
-
-    for product_item in product_items:
-        product_item.qty_in_stock += quantities_by_product_item[product_item.pk]
-
-    ProductItem.objects.bulk_update(product_items, ["qty_in_stock"])
-
-
 def optimized_order_queryset():
     return (
         Order.objects.select_related(
@@ -224,7 +203,11 @@ class AdminReturnRequestStatusAPIView(generics.GenericAPIView):
                 requested_status
             )
             if requested_status == "approved":
-                self.approve_return(return_request, new_return_status)
+                self.approve_return(
+                    return_request,
+                    new_return_status,
+                    request.user,
+                )
             else:
                 return_request.status = new_return_status
                 return_request.save(update_fields=("status",))
@@ -236,7 +219,7 @@ class AdminReturnRequestStatusAPIView(generics.GenericAPIView):
         )
 
     @staticmethod
-    def approve_return(return_request, approved_return_status):
+    def approve_return(return_request, approved_return_status, actor):
         refunded_order_status = get_configured_order_status("refunded")
         refunded_payment_status = PaymentStatus.objects.filter(
             name__iexact="refunded"
@@ -272,7 +255,15 @@ class AdminReturnRequestStatusAPIView(generics.GenericAPIView):
                 {"order": "Only delivered orders can be approved for return."}
             )
 
-        restore_order_stock(order)
+        try:
+            restore_order_stock(
+                order=order,
+                reason=InventoryLedgerEntry.Reason.RETURN_APPROVED,
+                actor=actor,
+                note="Stock restored after return approval.",
+            )
+        except InventoryError as exc:
+            raise ValidationError({"inventory": exc.message}) from exc
 
         payment.status = refunded_payment_status
         payment.save(update_fields=("status", "updated_at"))
@@ -483,7 +474,7 @@ class CheckoutAPIView(APIView):
 
             # Step 8 - Create order lines and deduct stock from locked rows.
             order_lines = []
-            product_items_to_update = []
+            stock_changes = []
             for cart_item in cart_items:
                 product_item = product_item_map[cart_item.product_item_id]
                 order_lines.append(
@@ -495,14 +486,25 @@ class CheckoutAPIView(APIView):
                     )
                 )
 
-                product_item.qty_in_stock -= cart_item.quantity
-                product_items_to_update.append(product_item)
+                stock_changes.append(
+                    StockChange(
+                        product_item=product_item,
+                        quantity_change=-cart_item.quantity,
+                        reason=InventoryLedgerEntry.Reason.CHECKOUT,
+                        order=order,
+                        actor=request.user,
+                        idempotency_key=(
+                            f"order:{order.pk}:stock-deducted:"
+                            f"item:{product_item.pk}"
+                        ),
+                    )
+                )
 
             OrderLine.objects.bulk_create(order_lines)
-            ProductItem.objects.bulk_update(
-                product_items_to_update,
-                ["qty_in_stock"],
-            )
+            try:
+                apply_locked_stock_changes(stock_changes)
+            except InventoryError as exc:
+                raise ValidationError({"inventory": exc.message}) from exc
 
             # Step 9 - Clear cart after the order has been created successfully.
             CartItem.objects.filter(cart=cart).delete()
@@ -586,7 +588,15 @@ class CustomerOrderViewSet(ReadOnlyModelViewSet):
                 )
 
             cancelled_status = get_configured_order_status("cancelled")
-            restore_order_stock(order)
+            try:
+                restore_order_stock(
+                    order=order,
+                    reason=InventoryLedgerEntry.Reason.ORDER_CANCELLED,
+                    actor=request.user,
+                    note="Stock restored after customer cancellation.",
+                )
+            except InventoryError as exc:
+                raise ValidationError({"inventory": exc.message}) from exc
             sync_cod_payment_status(order, "cancelled")
             order.status = cancelled_status
             order.save(update_fields=("status",))
@@ -655,7 +665,20 @@ class AdminOrderViewSet(ReadOnlyModelViewSet):
 
             new_status = get_configured_order_status(new_status_name)
             if new_status_name in RESTOCKED_ORDER_STATUSES:
-                restore_order_stock(order)
+                reason = (
+                    InventoryLedgerEntry.Reason.ORDER_CANCELLED
+                    if new_status_name == "cancelled"
+                    else InventoryLedgerEntry.Reason.ORDER_REFUNDED
+                )
+                try:
+                    restore_order_stock(
+                        order=order,
+                        reason=reason,
+                        actor=request.user,
+                        note="Stock restored after admin order status update.",
+                    )
+                except InventoryError as exc:
+                    raise ValidationError({"inventory": exc.message}) from exc
 
             sync_cod_payment_status(order, new_status_name)
 

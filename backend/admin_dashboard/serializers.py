@@ -43,12 +43,28 @@ class AdminProductItemSerializer(serializers.ModelSerializer):
             "product_image",
         )
 
+    def validate(self, attrs):
+        if self.instance is not None and "qty_in_stock" in self.initial_data:
+            raise serializers.ValidationError(
+                {
+                    "qty_in_stock": (
+                        "Use the dedicated stock endpoint to change inventory."
+                    )
+                }
+            )
+        return attrs
+
 
 class StockUpdateSerializer(serializers.Serializer):
     qty_in_stock = serializers.IntegerField(min_value=0)
+    note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=1000,
+    )
 
     def validate(self, attrs):
-        unexpected_fields = set(self.initial_data) - {"qty_in_stock"}
+        unexpected_fields = set(self.initial_data) - {"qty_in_stock", "note"}
         if unexpected_fields:
             raise serializers.ValidationError(
                 {

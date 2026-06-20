@@ -12,6 +12,7 @@ from rest_framework.test import APIClient
 
 from accounts.models import User
 from catalog.models import Brand, Category, Product, ProductItem
+from inventory.models import InventoryLedgerEntry
 from locations.models import Address, City, Country, District, Province, Ward
 from orders.models import Order, OrderLine, OrderStatus, ShippingMethod
 
@@ -261,6 +262,19 @@ class PaymentWebhookTests(TestCase):
         self.assertEqual(payment.status, self.payment_failed)
         self.assertEqual(order.status, self.order_cancelled)
         self.assertEqual(self.product_item.qty_in_stock, 5)
+        self.assertEqual(
+            InventoryLedgerEntry.objects.filter(
+                order=order,
+                product_item=self.product_item,
+            ).count(),
+            1,
+        )
+        ledger_entry = InventoryLedgerEntry.objects.get(
+            order=order,
+            product_item=self.product_item,
+        )
+        self.assertEqual(ledger_entry.reason, "payment_failed")
+        self.assertEqual(ledger_entry.quantity_change, 2)
 
     def test_success_callback_after_customer_cancel_does_not_reopen_order(self):
         order, payment = self.create_order_and_payment(self.vnpay_method)
@@ -321,6 +335,12 @@ class PaymentWebhookTests(TestCase):
         self.assertEqual(payment.status, self.payment_failed)
         self.assertEqual(order.status, self.order_cancelled)
         self.assertEqual(self.product_item.qty_in_stock, 5)
+        entries = InventoryLedgerEntry.objects.filter(
+            order=order,
+            product_item=self.product_item,
+        )
+        self.assertEqual(entries.count(), 1)
+        self.assertEqual(entries.get().reason, "order_cancelled")
 
     def test_successful_payment_prevents_later_customer_cancellation(self):
         order, payment = self.create_order_and_payment(self.vnpay_method)

@@ -11,6 +11,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 
 from accounts.models import Role, User
 from catalog.models import Brand, Category, Product, ProductItem
+from inventory.models import InventoryLedgerEntry
 from orders.models import ShippingMethod
 from payments.models import PaymentMethod
 from promotions.models import DiscountType, Promotion
@@ -149,6 +150,12 @@ class AdminManagementAPITests(TestCase):
         self.assertEqual(response.data["qty_in_stock"], 25)
         self.product_item.refresh_from_db()
         self.assertEqual(self.product_item.qty_in_stock, 25)
+        ledger_entry = InventoryLedgerEntry.objects.get(
+            product_item=self.product_item
+        )
+        self.assertEqual(ledger_entry.quantity_change, 21)
+        self.assertEqual(ledger_entry.quantity_before, 4)
+        self.assertEqual(ledger_entry.quantity_after, 25)
 
         invalid_response = self.client.patch(
             url,

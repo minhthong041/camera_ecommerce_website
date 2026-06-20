@@ -13,8 +13,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from catalog.models import ProductItem
-from orders.models import Order, OrderLine, OrderStatus
+from inventory.models import InventoryLedgerEntry
+from inventory.services import InventoryError, restore_order_stock
+from orders.models import Order, OrderStatus
 from orders.state_machine import (
     normalize_status_name,
     payment_failure_restores_stock,
@@ -70,34 +71,6 @@ def vnpay_result_response(payment, message):
         "order_id": payment.order_id,
         "order_code": payment.order.order_code,
     }
-
-
-def restore_order_stock(order):
-    order_lines = list(
-        OrderLine.objects.filter(order=order)
-        .values("product_item_id", "quantity")
-        .order_by("product_item_id")
-    )
-    product_item_ids = [line["product_item_id"] for line in order_lines]
-    product_items = {
-        item.pk: item
-        for item in ProductItem.objects.select_for_update()
-        .filter(pk__in=product_item_ids)
-        .order_by("pk")
-    }
-
-    if len(product_items) != len(set(product_item_ids)):
-        raise GatewayConfigurationError(
-            "Could not restore stock because an order item no longer exists."
-        )
-
-    for line in order_lines:
-        product_items[line["product_item_id"]].qty_in_stock += line["quantity"]
-
-    ProductItem.objects.bulk_update(
-        list(product_items.values()),
-        ["qty_in_stock"],
-    )
 
 
 def process_gateway_result(
@@ -179,7 +152,14 @@ def process_gateway_result(
                 "Failed payment status is not configured.",
             )
             if payment_failure_restores_stock(current_order_status):
-                restore_order_stock(order)
+                try:
+                    restore_order_stock(
+                        order=order,
+                        reason=InventoryLedgerEntry.Reason.PAYMENT_FAILED,
+                        note="Stock restored after failed payment.",
+                    )
+                except InventoryError as exc:
+                    raise GatewayConfigurationError(exc.message) from exc
 
         order_status = None
         if target_order_status != current_order_status:
