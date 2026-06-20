@@ -191,6 +191,26 @@ VNPAY_IPN_URL=https://<public-backend>/api/payments/vnpay/ipn/
 dùng kiểm thử code. Khai báo URL này trong cấu hình merchant sandbox. Không commit
 `TMN_CODE` hoặc `HASH_SECRET` thật vào Git.
 
+## Email
+
+Mặc định development dùng console backend. Để gửi email thật, cấu hình SMTP trong
+`backend/.env` (với Gmail nên dùng App Password, không dùng mật khẩu đăng nhập):
+
+```env
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=<smtp-account>
+EMAIL_HOST_PASSWORD=<smtp-app-password>
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+DEFAULT_FROM_EMAIL=CameraShop <no-reply@example.com>
+FRONTEND_BASE_URL=http://localhost:5173
+```
+
+Hệ thống gửi email reset mật khẩu, OTP, xác nhận/cập nhật đơn hàng và trạng thái
+yêu cầu đổi trả. Không commit tài khoản hoặc mật khẩu SMTP vào Git.
+
 ## Continuous Integration
 
 GitHub Actions workflow nằm tại:

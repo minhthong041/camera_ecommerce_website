@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 from inventory.models import InventoryLedgerEntry
 from inventory.services import InventoryError, restore_order_stock
 from orders.models import Order, OrderStatus
+from orders.emails import schedule_order_status_email
 from orders.state_machine import (
     normalize_status_name,
     payment_failure_restores_stock,
@@ -190,6 +191,7 @@ def process_gateway_result(
         if order_status is not None:
             order.status = order_status
             order.save(update_fields=("status",))
+            schedule_order_status_email(order.pk, "payment_updated")
 
         return payment, False
 

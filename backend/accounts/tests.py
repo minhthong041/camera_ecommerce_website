@@ -61,7 +61,10 @@ class AccountSecurityAPITests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
-        return mail.outbox[0].body.strip().splitlines()[-1]
+        reset_url = next(
+            line for line in mail.outbox[0].body.splitlines() if "/reset-password?" in line
+        )
+        return reset_url.split("token=", maxsplit=1)[1].strip()
 
     def test_change_password_requires_correct_old_password(self):
         self.authenticate_user()
@@ -139,16 +142,20 @@ class AccountSecurityAPITests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [self.user.email])
         self.assertNotIn("token", response.data)
+        self.assertIn("/reset-password?", mail.outbox[0].body)
+        self.assertEqual(len(mail.outbox[0].alternatives), 1)
 
     def test_password_reset_rejects_unknown_or_inactive_account(self):
         for email in ("missing@example.com", self.inactive_user.email):
             with self.subTest(email=email):
+                mail.outbox.clear()
                 response = self.client.post(
                     "/api/auth/password-reset/",
                     {"email": email},
                     format="json",
                 )
-                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(len(mail.outbox), 0)
 
     def test_password_reset_confirm_changes_password_and_revokes_refresh_tokens(self):
         refresh = RefreshToken.for_user(self.user)

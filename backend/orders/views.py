@@ -35,6 +35,7 @@ from .models import (
     ReturnRequestStatus,
     ShippingMethod,
 )
+from .emails import schedule_order_status_email, schedule_return_status_email
 from .serializers import (
     CheckoutSerializer,
     OrderDetailSerializer,
@@ -162,6 +163,7 @@ class ReturnRequestListCreateAPIView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         return_request = serializer.save()
+        schedule_return_status_email(return_request.pk)
         output_serializer = ReturnRequestSerializer(
             return_request,
             context=self.get_serializer_context(),
@@ -213,6 +215,7 @@ class AdminReturnRequestStatusAPIView(generics.GenericAPIView):
                 return_request.save(update_fields=("status",))
 
         return_request = optimized_return_request_queryset().get(pk=return_request.pk)
+        schedule_return_status_email(return_request.pk)
         return Response(
             ReturnRequestSerializer(return_request).data,
             status=status.HTTP_200_OK,
@@ -520,6 +523,7 @@ class CheckoutAPIView(APIView):
                 .prefetch_related("lines__product_item__product")
                 .get(pk=order.pk)
             )
+            schedule_order_status_email(order.pk, "created")
 
         response_data = OrderSerializer(order).data
         payment_data = {
@@ -600,6 +604,7 @@ class CustomerOrderViewSet(ReadOnlyModelViewSet):
             sync_cod_payment_status(order, "cancelled")
             order.status = cancelled_status
             order.save(update_fields=("status",))
+            schedule_order_status_email(order.pk, "cancelled")
 
             order = self.get_queryset().get(pk=order.pk)
             return Response(self.get_serializer(order).data, status=status.HTTP_200_OK)
@@ -684,6 +689,7 @@ class AdminOrderViewSet(ReadOnlyModelViewSet):
 
             order.status = new_status
             order.save(update_fields=("status",))
+            schedule_order_status_email(order.pk, "status_updated")
 
             order = self.get_queryset().get(pk=order.pk)
             return Response(

@@ -1,0 +1,9 @@
+<!doctype html>
+<html><body style="font-family:Arial,sans-serif;color:#1f2937">
+  <h2>Order {{ order.order_code }}</h2>
+  <p>Status: <strong>{{ order.status.name }}</strong></p>
+  <table style="width:100%;border-collapse:collapse">
+    {% for line in lines %}<tr><td style="padding:8px 0;border-bottom:1px solid #e5e7eb">{{ line.product_item.product.name }} x {{ line.quantity }}</td><td style="padding:8px 0;border-bottom:1px solid #e5e7eb;text-align:right">{{ line.price }} VND</td></tr>{% endfor %}
+  </table>
+  <p><strong>Total: {{ order.total_amount }} VND</strong></p>
+</body></html>

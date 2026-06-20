@@ -277,16 +277,11 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         normalized_email = value.strip().lower()
-        user = User.objects.filter(
+        self.user = User.objects.filter(
             email__iexact=normalized_email,
             is_active=True,
         ).first()
-        if user is None:
-            raise serializers.ValidationError(
-                "No active account was found for this email address."
-            )
-        self.user = user
-        return user.email
+        return self.user.email if self.user else normalized_email
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):

@@ -1,0 +1,4 @@
+Return request for order {{ return_request.order.order_code }}
+
+Status: {{ return_request.status.name }}
+Reason: {{ return_request.reason }}

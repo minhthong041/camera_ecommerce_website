@@ -1,9 +1,7 @@
 import logging
 import secrets
 
-from django.conf import settings
 from django.core.cache import cache
-from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
@@ -29,6 +27,7 @@ from .serializers import (
     build_token_response,
     password_reset_token_generator,
 )
+from .emails import send_email_otp, send_password_reset_email
 
 
 logger = logging.getLogger(__name__)
@@ -42,13 +41,8 @@ def otp_cache_key(identifier):
 
 def send_otp_code(channel, destination, otp):
     if channel == "email":
-        send_mail(
-            subject="Your verification code",
-            message=f"Your verification code is {otp}. It expires in 5 minutes.",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[destination],
-            fail_silently=False,
-        )
+        if not send_email_otp(destination, otp):
+            raise RuntimeError("Unable to deliver verification email.")
         return
 
     # Replace this development log with an SMS provider in production.
@@ -138,19 +132,15 @@ class PasswordResetRequestView(generics.GenericAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.user
+        if user is None:
+            return Response(
+                {"detail": "If the account exists, a password reset email was sent."}
+            )
         token = password_reset_token_generator.make_token(user)
 
         try:
-            send_mail(
-                subject="Reset your password",
-                message=(
-                    "Use the following token with your email address to reset "
-                    f"your password:\n\n{token}"
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
+            if not send_password_reset_email(user, token):
+                raise RuntimeError("Unable to deliver password reset email.")
         except Exception:
             logger.exception("Unable to send password reset email")
             return Response(
@@ -158,7 +148,9 @@ class PasswordResetRequestView(generics.GenericAPIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        return Response({"detail": "Password reset email sent."})
+        return Response(
+            {"detail": "If the account exists, a password reset email was sent."}
+        )
 
 
 class PasswordResetConfirmView(generics.GenericAPIView):

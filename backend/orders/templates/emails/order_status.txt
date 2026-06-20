@@ -1,0 +1,7 @@
+Order {{ order.order_code }}
+
+Status: {{ order.status.name }}
+Total: {{ order.total_amount }} VND
+{% for line in lines %}- {{ line.product_item.product.name }} x {{ line.quantity }}
+{% endfor %}
+Thank you for shopping with CameraShop.
