@@ -393,6 +393,55 @@ class PaymentWebhookTests(TestCase):
         self.assertEqual(order.status, self.order_pending)
         self.assertEqual(self.product_item.qty_in_stock, 3)
 
+    def test_vnpay_ipn_uses_gateway_contract_and_is_idempotent(self):
+        order, payment = self.create_order_and_payment(self.vnpay_method)
+        params = {
+            "vnp_Amount": "10000000",
+            "vnp_ResponseCode": "00",
+            "vnp_TmnCode": "TESTMERCHANT",
+            "vnp_TransactionNo": "VNPAY-IPN-SUCCESS-001",
+            "vnp_TransactionStatus": "00",
+            "vnp_TxnRef": str(payment.pk),
+        }
+        params["vnp_SecureHash"] = self.sign_vnpay_params(params)
+
+        first_response = self.client.get("/api/payments/vnpay/ipn/", params)
+        second_response = self.client.get("/api/payments/vnpay/ipn/", params)
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(first_response.data["RspCode"], "00")
+        self.assertEqual(first_response.data["Message"], "Confirm Success")
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(second_response.data["RspCode"], "00")
+
+        payment.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(payment.status, self.payment_paid)
+        self.assertEqual(order.status, self.order_processing)
+
+    def test_vnpay_ipn_invalid_signature_returns_gateway_error_contract(self):
+        order, payment = self.create_order_and_payment(self.vnpay_method)
+
+        response = self.client.get(
+            "/api/payments/vnpay/ipn/",
+            {
+                "vnp_Amount": "10000000",
+                "vnp_ResponseCode": "00",
+                "vnp_TmnCode": "TESTMERCHANT",
+                "vnp_TransactionNo": "VNPAY-IPN-INVALID-001",
+                "vnp_TransactionStatus": "00",
+                "vnp_TxnRef": str(payment.pk),
+                "vnp_SecureHash": "invalid-signature",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["RspCode"], "97")
+        payment.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(payment.status, self.payment_pending)
+        self.assertEqual(order.status, self.order_pending)
+
     def test_stripe_success_webhook_updates_foreign_key_statuses(self):
         order, payment = self.create_order_and_payment(
             self.stripe_method,

@@ -446,6 +446,39 @@ class VNPayCallbackView(APIView):
         )
 
 
+class VNPayIPNView(VNPayCallbackView):
+    """Server-to-server notification endpoint using VNPay's response contract."""
+
+    def get(self, request, *args, **kwargs):
+        return self.handle_ipn(request)
+
+    def post(self, request, *args, **kwargs):
+        return self.handle_ipn(request)
+
+    def handle_ipn(self, request):
+        callback_response = super().handle_callback(request)
+        response_code = str(callback_response.data.get("RspCode", "99"))
+
+        if callback_response.status_code != status.HTTP_200_OK:
+            return Response(
+                {
+                    "RspCode": response_code,
+                    "Message": callback_response.data.get(
+                        "Message",
+                        "Invalid request",
+                    ),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # Returning 00 for duplicate notifications stops gateway retries while
+        # the transaction-level idempotency guard prevents repeated effects.
+        return Response(
+            {"RspCode": "00", "Message": "Confirm Success"},
+            status=status.HTTP_200_OK,
+        )
+
+
 class StripeWebhookView(APIView):
     permission_classes = (AllowAny,)
     authentication_classes = ()

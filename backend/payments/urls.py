@@ -7,6 +7,7 @@ from .views import (
     PaymentStatusListView,
     StripeWebhookView,
     VNPayCallbackView,
+    VNPayIPNView,
 )
 
 
@@ -25,6 +26,11 @@ urlpatterns = [
         "vnpay/callback/",
         VNPayCallbackView.as_view(),
         name="vnpay-callback",
+    ),
+    path(
+        "vnpay/ipn/",
+        VNPayIPNView.as_view(),
+        name="vnpay-ipn",
     ),
     path(
         "stripe/webhook/",

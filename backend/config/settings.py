@@ -221,6 +221,10 @@ VNPAY_RETURN_URL = config(
     "VNPAY_RETURN_URL",
     default="http://localhost:5173/payment-result",
 )
+VNPAY_IPN_URL = config(
+    "VNPAY_IPN_URL",
+    default="http://127.0.0.1:8000/api/payments/vnpay/ipn/",
+)
 
 STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="")
 STRIPE_WEBHOOK_SECRET = config("STRIPE_WEBHOOK_SECRET", default="")

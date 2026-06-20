@@ -175,6 +175,22 @@ cd frontend
 npm run build
 ```
 
+## VNPay Sandbox
+
+Đăng ký merchant sandbox và cấu hình các biến sau trong `backend/.env`:
+
+```env
+VNPAY_TMN_CODE=<merchant-code>
+VNPAY_HASH_SECRET=<hash-secret>
+VNPAY_PAYMENT_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
+VNPAY_RETURN_URL=http://localhost:5173/payment-result
+VNPAY_IPN_URL=https://<public-backend>/api/payments/vnpay/ipn/
+```
+
+`VNPAY_IPN_URL` phải là HTTPS public để VNPay gọi từ server của họ; localhost chỉ
+dùng kiểm thử code. Khai báo URL này trong cấu hình merchant sandbox. Không commit
+`TMN_CODE` hoặc `HASH_SECRET` thật vào Git.
+
 ## Continuous Integration
 
 GitHub Actions workflow nằm tại:
