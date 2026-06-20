@@ -39,7 +39,7 @@ export default function ProfilePage() {
           addressApi.getAddresses().catch(() => ({ data: [] })),
         ]);
         const data = profileResponse.data;
-        const rawAddressData = addressResponse.data;
+        const rawAddressData = addressResponse;
         const addresses = Array.isArray(rawAddressData)
           ? rawAddressData
           : rawAddressData?.results ?? [];
