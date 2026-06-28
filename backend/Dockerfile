@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 3131
+EXPOSE 8000
 
 
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:3131", "--log-level", "debug"]
+CMD ["sh", "-c", "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --log-level debug"]
